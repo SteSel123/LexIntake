@@ -1,0 +1,8 @@
+lancedb>=0.37.0
+pyarrow>=17.0.0
+agno>=1.0.0
+pydantic>=2.0
+streamlit>=1.32.0
+openai>=1.40.0
+python-dotenv>=1.0.0
+# SQLite is provided by the Python standard library (no extra package).

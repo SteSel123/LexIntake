@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+# Optional nightly full evaluation (disabled by default)
+# on:
+#   pull_request:
+#     branches: [main]
+#   schedule:
+#     - cron: "0 3 * * *"
+
+jobs:
+  smoke-test:
+    name: smoke-test
+    runs-on: ubuntu-latest
+
+    # Fully offline / deterministic — no external LLM or embedding APIs
+    env:
+      LEXINTAKE_EMBEDDING_PROVIDER: hash
+      LEXINTAKE_EMBEDDING_MODEL: hash-v1
+      LEXINTAKE_EMBEDDING_DIMS: "256"
+      LEXINTAKE_LLM_PROVIDER: local
+      LEXINTAKE_LLM_MODEL: deterministic
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GROQ_API_KEY: ""
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Optional: Ruff linting (commented out)
+      # - name: Install Ruff
+      #   run: pip install ruff
+      # - name: Ruff check
+      #   run: ruff check .
+
+      # Optional: unit tests (commented out)
+      # - name: Run unit tests
+      #   run: pytest -q
+
+      - name: Initialize structured DB
+        run: python db/init_structured_db.py
+
+      - name: Load KB documents (hash embeddings)
+        run: python db/load_kb_docs.py
+
+      - name: Run demo scenarios
+        run: python ui/demo.py
+
+      - name: Run limited evaluation (deterministic)
+        run: >
+          python evaluation/run_evaluation.py
+          --providers local:deterministic
+          --limit 5
+
+      # Optional nightly full evaluation (commented out; enable with schedule trigger above)
+      # - name: Nightly full evaluation
+      #   if: github.event_name == 'schedule'
+      #   run: python evaluation/run_evaluation.py --providers local:deterministic --limit 999
+
+      - name: Upload CI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexintake-ci-logs
+          path: |
+            evaluation/logs/
+            monitoring/logs/
+          if-no-files-found: warn
+          retention-days: 14

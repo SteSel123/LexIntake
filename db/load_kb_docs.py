@@ -1,0 +1,70 @@
+"""Load ETL-generated chunks into LanceDB kb_docs."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Allow running as `python db/load_kb_docs.py` and importing etl modules.
+ROOT = Path(__file__).resolve().parent.parent
+ETL_DIR = ROOT / "etl"
+DB_DIR = Path(__file__).resolve().parent
+for path in (str(ROOT), str(ETL_DIR), str(DB_DIR)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+from chunk import chunk_all  # noqa: E402
+from clean import clean_all  # noqa: E402
+from deduplicate import deduplicate_all  # noqa: E402
+from embeddings import DEFAULT_DIMENSIONS, embed_chunks, get_embedder  # noqa: E402
+from extract import extract_all  # noqa: E402
+from lancedb_store import connect, ensure_kb_docs, upsert_kb_docs  # noqa: E402
+from metadata import attach_metadata_all  # noqa: E402
+
+
+def run_load(*, full_refresh: bool = True) -> dict:
+    """
+    Extract → clean → deduplicate → chunk → metadata → embed → LanceDB upsert.
+
+    Uses configured embedder (OpenAI text-embedding-3-small by default).
+    Recreates kb_docs when embedding dimensionality changes.
+    """
+    embedder = get_embedder()
+    dims = int(embedder.dimensions)
+
+    documents = extract_all()
+    cleaned = clean_all(documents)
+    unique = deduplicate_all(cleaned)
+    chunks = chunk_all(unique)
+    enriched = attach_metadata_all(chunks)
+
+    existing = {}
+    if not full_refresh:
+        # Best-effort incremental reuse is limited after model/dim changes.
+        existing = {}
+
+    embedded, embed_stats = embed_chunks(enriched, embedder=embedder, existing_by_id=existing)
+
+    db = connect()
+    table = ensure_kb_docs(db, dimensions=dims, recreate_on_dim_mismatch=True)
+    stats = upsert_kb_docs(
+        embedded,
+        db=db,
+        table=table,
+        dimensions=dims,
+    )
+
+    print(
+        "kb_docs load complete: "
+        f"provider_model={embedder.model_name} dims={dims} "
+        f"extracted={len(documents)} cleaned={len(cleaned)} unique={len(unique)} "
+        f"chunks={len(chunks)} embedded={embed_stats['embedded']} "
+        f"reused={embed_stats['reused']} upsert_received={stats['received']} "
+        f"inserted={stats['inserted']} updated={stats['updated']} "
+        f"deleted={stats['deleted']} total={stats['total']}"
+    )
+    return stats
+
+
+if __name__ == "__main__":
+    run_load(full_refresh=True)
