@@ -16,40 +16,47 @@ for path in (str(ROOT), str(ETL_DIR), str(DB_DIR)):
 from chunk import chunk_all  # noqa: E402
 from clean import clean_all  # noqa: E402
 from deduplicate import deduplicate_all  # noqa: E402
-from embeddings import DEFAULT_DIMENSIONS, embed_chunks  # noqa: E402
+from embeddings import DEFAULT_DIMENSIONS, embed_chunks, get_embedder  # noqa: E402
 from extract import extract_all  # noqa: E402
 from lancedb_store import connect, ensure_kb_docs, upsert_kb_docs  # noqa: E402
 from metadata import attach_metadata_all  # noqa: E402
 
 
-def run_load(*, full_refresh: bool = False) -> dict:
+def run_load(*, full_refresh: bool = True) -> dict:
     """
     Extract → clean → deduplicate → chunk → metadata → embed → LanceDB upsert.
 
-    Incremental upsert retains existing kb_docs rows not present in this batch.
+    Uses configured embedder (OpenAI text-embedding-3-small by default).
+    Recreates kb_docs when embedding dimensionality changes.
     """
+    embedder = get_embedder()
+    dims = int(embedder.dimensions)
+
     documents = extract_all()
     cleaned = clean_all(documents)
     unique = deduplicate_all(cleaned)
     chunks = chunk_all(unique)
     enriched = attach_metadata_all(chunks)
 
-    # Always re-embed for LanceDB load path unless we later persist content_hash.
-    # full_refresh currently only documents intent; embeddings are deterministic.
-    _ = full_refresh
-    embedded, embed_stats = embed_chunks(enriched)
+    existing = {}
+    if not full_refresh:
+        # Best-effort incremental reuse is limited after model/dim changes.
+        existing = {}
+
+    embedded, embed_stats = embed_chunks(enriched, embedder=embedder, existing_by_id=existing)
 
     db = connect()
-    table = ensure_kb_docs(db, dimensions=DEFAULT_DIMENSIONS)
+    table = ensure_kb_docs(db, dimensions=dims, recreate_on_dim_mismatch=True)
     stats = upsert_kb_docs(
         embedded,
         db=db,
         table=table,
-        dimensions=DEFAULT_DIMENSIONS,
+        dimensions=dims,
     )
 
     print(
         "kb_docs load complete: "
+        f"provider_model={embedder.model_name} dims={dims} "
         f"extracted={len(documents)} cleaned={len(cleaned)} unique={len(unique)} "
         f"chunks={len(chunks)} embedded={embed_stats['embedded']} "
         f"reused={embed_stats['reused']} upsert_received={stats['received']} "
@@ -60,4 +67,4 @@ def run_load(*, full_refresh: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    run_load()
+    run_load(full_refresh=True)

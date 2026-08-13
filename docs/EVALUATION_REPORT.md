@@ -3,7 +3,9 @@
 **Date:** 2026-08-13  
 **Harness:** `python evaluation/run_evaluation.py`  
 **Dataset:** `evaluation/leads.csv` (30 labeled synthetic leads)  
-**Stack under test:** local deterministic IntakeAgent + LanceDB + SQLite + lead scoring  
+**Stack under test:**  
+- **Local / CI:** deterministic IntakeAgent + hash embeddings + LanceDB + SQLite + lead scoring  
+- **Live (optional):** OpenAI `text-embedding-3-small` + `gpt-4.1` (and Anthropic/Groq when keys are set) 
 
 > This report evaluates screening behavior. **This is not legal advice.**
 
@@ -84,20 +86,25 @@ Local path is effectively free and fast (~88 ms/lead average in this run). Suita
 
 ### 3.8 Provider comparison
 
-Providers are compared with the **same behavioral output** and modeled cost/latency multipliers (no live API keys required for this report):
+**CI / offline:** run with `--providers local:deterministic` (no API keys).
+
+**Live:** configure keys in `.env` and run e.g.:
+
+```powershell
+python evaluation/run_evaluation.py --providers openai:gpt-4.1,anthropic:claude-3.5-sonnet,groq:llama-3-70b --limit 5
+```
+
+Baseline local numbers from the capstone harness (hash path, full 30 leads):
 
 | Provider | Qual acc | Abst acc | Grounding | Avg ms | Avg cost |
 |----------|----------|----------|-----------|--------|----------|
 | local | 50.00% | 36.67% | 100% | 88.3 | $0.0000 |
-| groq | 50.00% | 36.67% | 100% | 75.0 | $0.0040 |
-| openai | 50.00% | 36.67% | 100% | 119.2 | $0.0120 |
-| anthropic | 50.00% | 36.67% | 100% | 128.0 | $0.0140 |
 
-**Note:** live multi-provider LLM comparison (different generations) is a follow-up once API credentials and embedding providers are configured.
+Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrails** with real embeddings + gpt-4.1 narratives; cost/latency vary by token usage.
 
 ## 4. Scenario spot checks (UI demo)
 
-`python ui/demo.py` — 4/4 pass:
+`python ui/demo.py` — 4/4 pass (deterministic / CI mode):
 
 1. Valid PI → `SCHEDULE_CONSULT`  
 2. Expired SOL → `REJECT`  
@@ -109,24 +116,28 @@ Providers are compared with the **same behavioral output** and modeled cost/late
 **Strengths**
 
 - Strong grounding and guardrail compliance
-- Solid retrieval hit rate
-- Fast, reproducible local evaluation
+- Solid retrieval hit rate (hash and OpenAI paths)
+- Fast, reproducible local evaluation for CI
 - Clear decision schema for intake ops
+- Offline GitHub Actions smoke workflow
 
 **Gaps**
 
 - Qualification/score/value label alignment needs calibration
-- Provider comparison is modeled, not live-LLM
+- Multi-turn interview UX not yet built
 - Case-value comps need denser synthetic history
 
-**Recommendation for grading demo:** emphasize guardrails, grounding, ETL/idempotency, and end-to-end UI path; present evaluation numbers transparently with calibration as next iteration.
+**Recommendation for grading demo:** emphasize guardrails, grounding, ETL/idempotency, OpenAI RAG path, CI smoke, and end-to-end UI; present evaluation numbers transparently with calibration as next iteration.
 
 ## 6. How to reproduce
 
 ```powershell
 pip install -r requirements.txt
+copy .env.example .env   # optional: set OPENAI_API_KEY for live path
 python db/init_structured_db.py
 python db/load_kb_docs.py
-python evaluation/run_evaluation.py
+python evaluation/run_evaluation.py --providers local:deterministic --limit 5
 python ui/demo.py
 ```
+
+CI equivalent: `.github/workflows/ci.yml` (hash embeddings, `--limit 5`).

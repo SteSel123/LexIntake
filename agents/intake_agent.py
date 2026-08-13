@@ -11,11 +11,12 @@ from agno.agent import Agent
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
+AGENTS_DIR = Path(__file__).resolve().parent
 TOOLS_DIR = ROOT / "tools"
 DB_DIR = ROOT / "db"
 ETL_DIR = ROOT / "etl"
 MON_DIR = ROOT / "monitoring"
-for path in (str(ROOT), str(TOOLS_DIR), str(DB_DIR), str(ETL_DIR), str(MON_DIR)):
+for path in (str(ROOT), str(AGENTS_DIR), str(TOOLS_DIR), str(DB_DIR), str(ETL_DIR), str(MON_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -28,6 +29,17 @@ from conflict_check import ConflictCheckInput, conflict_check  # noqa: E402
 from estimate_case_value import EstimateCaseValueInput, estimate_case_value  # noqa: E402
 from route_lead import RouteLeadInput, route_lead  # noqa: E402
 from web_search_fallback import WebSearchFallbackInput, web_search_fallback  # noqa: E402
+
+try:
+    from agents.llm import build_model  # noqa: E402
+except ImportError:  # pragma: no cover
+    from llm import build_model  # noqa: E402
+
+try:
+    from config import LLM_MODEL, LLM_PROVIDER  # noqa: E402
+except ImportError:  # pragma: no cover
+    LLM_PROVIDER = "openai"
+    LLM_MODEL = "gpt-4.1"
 
 logger = logging.getLogger("lexintake.agent.intake")
 if not logger.handlers:
@@ -50,7 +62,10 @@ INTAKE_INSTRUCTIONS = [
     "You may summarize knowledge-base rules but must cite KB chunks.",
     "Never invent statutes, SOL rules, case law, or attorney profiles.",
     "If confidence is low, escalate to a human intake specialist.",
-    "Always include: This is not legal advice. Consult a licensed attorney for legal guidance.",
+    "Always include exactly: This is not legal advice. Consult a licensed attorney for legal guidance.",
+    "Use tools when needed: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead.",
+    "Prefer retrieved KB evidence. If evidence is missing, say so and escalate.",
+    "Return a concise screening summary with next steps, never directives like 'you should sue'.",
 ]
 
 
@@ -133,6 +148,13 @@ class IntakeResponse(BaseModel):
     escalate: bool
     confidence: float
     questions: list[str] = Field(default_factory=list)
+    provider: str = ""
+    model_id: str = ""
+    latency_ms: float = 0.0
+    cost: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    used_llm: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -150,17 +172,36 @@ class IntakeAgent(Agent):
         self,
         *,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
-        top_k: int = 5,
-        model: str | None = None,
+        top_k: int = 8,
+        model: Any | None = None,
+        provider: str | None = None,
+        model_id: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.confidence_threshold = confidence_threshold
-        self.top_k = top_k
+        self.top_k = max(5, min(10, int(top_k)))
         self._reasoning_log: list[str] = []
+        self.provider = (provider or LLM_PROVIDER or "openai").lower()
+        self.model_id = model_id or LLM_MODEL
+        self._token_usage = {"input": 0, "output": 0, "total": 0}
+        self._llm_cost = 0.0
+
+        llm = model
+        if llm is None and self.provider not in {"local", "deterministic", "hash", "none"}:
+            try:
+                llm = build_model(self.provider, self.model_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "LLM unavailable (%s); agent will use deterministic fallback path.",
+                    exc,
+                )
+                llm = None
+        elif self.provider in {"local", "deterministic", "hash", "none"}:
+            llm = None
 
         super().__init__(
             name="LexIntake Intake Agent",
-            model=model,
+            model=llm,
             tools=[
                 check_statute_of_limitations,
                 conflict_check,
@@ -170,9 +211,154 @@ class IntakeAgent(Agent):
             ],
             instructions=INTAKE_INSTRUCTIONS,
             reasoning=True,
+            tool_choice="auto",
             markdown=True,
             **kwargs,
         )
+
+    @property
+    def llm_ready(self) -> bool:
+        return self.model is not None
+
+    def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        # Approximate USD rates for provider comparison logging.
+        rates = {
+            "openai": (0.000002, 0.000008),
+            "anthropic": (0.000003, 0.000015),
+            "groq": (0.0000006, 0.0000008),
+        }
+        inn, out = rates.get(self.provider, (0.000002, 0.000008))
+        return input_tokens * inn + output_tokens * out
+
+    def _complete(self, prompt: str, *, system: str | None = None) -> str:
+        """Single-shot LLM completion (no tool loop)."""
+        if not self.model:
+            return ""
+        try:
+            from agno.models.message import Message
+
+            messages = []
+            if system:
+                messages.append(Message(role="system", content=system))
+            messages.append(Message(role="user", content=prompt))
+            response = self.model.response(messages)
+            content = getattr(response, "content", None) or ""
+            usage = getattr(response, "response_usage", None)
+            in_tok = int(
+                getattr(response, "input_tokens", None)
+                or getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", None)
+                or 0
+            )
+            out_tok = int(
+                getattr(response, "output_tokens", None)
+                or getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", None)
+                or 0
+            )
+            # Fallback estimate when provider omits usage counters.
+            if in_tok == 0 and out_tok == 0:
+                in_tok = max(1, len(prompt) // 4)
+                out_tok = max(1, len(str(content)) // 4)
+            self._token_usage["input"] += in_tok
+            self._token_usage["output"] += out_tok
+            self._token_usage["total"] += int(
+                getattr(response, "total_tokens", 0) or (in_tok + out_tok)
+            )
+            self._llm_cost += self._estimate_cost(in_tok, out_tok)
+            return str(content).strip()
+        except Exception as exc:  # noqa: BLE001
+            self._log("llm", f"completion failed: {exc}")
+            return ""
+
+    def _llm_refine_plan(self, facts: IntakeFacts, plan: PlanResult) -> PlanResult:
+        """Ask the LLM to refine tool selection / retrieval focus (agentic planning)."""
+        if not self.llm_ready:
+            return plan
+        prompt = f"""You are planning an intake screening run.
+Return ONLY compact JSON with keys:
+tools_to_call (array of tool names), retrieval_query (string), doc_types (array), escalate (bool), reasoning (string).
+
+Allowed tools: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead, web_search_fallback
+Facts: {facts.model_dump_json()}
+Draft plan: {plan.model_dump_json()}
+Prefer calling tools when facts support them. Escalate when key facts are missing or ambiguous.
+"""
+        raw = self._complete(
+            prompt,
+            system="Plan intake tooling. Output JSON only. No legal advice.",
+        )
+        if not raw:
+            return plan
+        try:
+            import json
+            import re
+
+            match = re.search(r"\{.*\}", raw, flags=re.S)
+            payload = json.loads(match.group(0) if match else raw)
+            allowed = {
+                "check_statute_of_limitations",
+                "conflict_check",
+                "estimate_case_value",
+                "route_lead",
+                "web_search_fallback",
+            }
+            tools = [t for t in payload.get("tools_to_call", plan.tools_to_call) if t in allowed]
+            if tools:
+                plan.tools_to_call = tools
+            if payload.get("retrieval_query"):
+                plan.retrieval_query = str(payload["retrieval_query"])
+            if isinstance(payload.get("doc_types"), list) and payload["doc_types"]:
+                plan.doc_types = [str(x) for x in payload["doc_types"]]
+            if "escalate" in payload:
+                plan.escalate = bool(payload["escalate"]) or plan.escalate
+            if payload.get("reasoning"):
+                plan.reasoning = f"{plan.reasoning}; llm={payload['reasoning']}"
+            self._log("plan", f"llm-refined tools={plan.tools_to_call}")
+        except Exception as exc:  # noqa: BLE001
+            self._log("plan", f"llm refine parse failed: {exc}")
+        return plan
+
+    def _llm_write_message(
+        self,
+        facts: IntakeFacts,
+        retrieval: RetrieveResult,
+        tools: ToolPhaseResult,
+        decision: DecisionResult,
+        escalate: bool,
+        questions: list[str],
+    ) -> str:
+        """Generate the user-facing explanation with the configured LLM."""
+        cites = [
+            {
+                "chunk_id": c.chunk_id,
+                "practice_area": c.practice_area,
+                "doc_type": c.doc_type,
+                "excerpt": c.excerpt,
+            }
+            for c in retrieval.citations
+        ]
+        prompt = f"""Write a concise LexIntake screening summary for staff.
+Requirements:
+- Do NOT give legal advice or tell the prospect what they should do legally.
+- Cite KB chunk_ids from the provided citations list (include a KB citations section).
+- Include lead score, viability, routing, tool results, and next steps.
+- If escalate=true OR confidence is low, include exactly: {UNCERTAINTY_ESCALATION}
+- Always end with exactly: {LEGAL_DISCLAIMER}
+- Do not invent statutes or cases.
+
+Facts: {facts.model_dump_json()}
+Tool results: {tools.model_dump_json()}
+Decision: {decision.model_dump_json()}
+Citations: {cites}
+Escalate flag: {escalate}
+Follow-up questions: {questions}
+"""
+        text = self._complete(
+            prompt,
+            system="\n".join(INTAKE_INSTRUCTIONS),
+        )
+        return text
 
     # -- internal logging (not shown to user) ---------------------------------
 
@@ -270,10 +456,10 @@ class IntakeAgent(Agent):
         for doc_type in doc_types:
             hits: list[dict[str, Any]] = []
             try:
-                from embeddings import HashEmbedder
+                from embeddings import get_embedder
                 from lancedb_store import search_kb_docs
 
-                vector = HashEmbedder().embed([query])[0]
+                vector = get_embedder().embed([query])[0]
                 hits = search_kb_docs(
                     vector,
                     top_k=self.top_k,
@@ -535,52 +721,73 @@ class IntakeAgent(Agent):
         tools: ToolPhaseResult,
         decision: DecisionResult,
         check: SelfCheckResult,
+        *,
+        use_llm: bool = True,
     ) -> IntakeResponse:
         """Build user-facing message with mandatory guardrails."""
-        citation_lines = []
-        for cite in retrieval.citations:
-            citation_lines.append(
-                f"- chunk_id={cite.chunk_id}; practice_area={cite.practice_area}; "
-                f"doc_type={cite.doc_type}"
-            )
-        citations_block = (
-            "\n".join(citation_lines)
-            if citation_lines
-            else "- No KB chunks cited (insufficient retrieval matches)."
-        )
-
-        tool_summary_parts: list[str] = []
-        if tools.sol:
-            tool_summary_parts.append(
-                f"SOL check: valid={tools.sol.get('valid')}, "
-                f"expires_in={tools.sol.get('expires_in')} days."
-            )
-        if tools.conflict:
-            tool_summary_parts.append(
-                f"Conflict check: conflict={tools.conflict.get('conflict')}."
-            )
-        if tools.estimate:
-            tool_summary_parts.append(
-                f"Value estimate: ${float(tools.estimate.get('estimate') or 0):,.2f} "
-                f"(range ${float(tools.estimate.get('range_low') or 0):,.2f}"
-                f"–${float(tools.estimate.get('range_high') or 0):,.2f})."
-            )
-        if tools.routing:
-            tool_summary_parts.append(
-                f"Routing: {tools.routing.get('attorney_name') or 'unassigned'}."
-            )
-        if tools.web_fallback:
-            tool_summary_parts.append("Fallback retrieval was used (local KB only).")
-
         escalate = check.escalate or decision.confidence < self.confidence_threshold
-        escalation_line = UNCERTAINTY_ESCALATION if escalate else ""
-
         questions = plan.questions[:3]
-        question_block = ""
-        if questions:
-            question_block = "Next questions:\n" + "\n".join(f"- {q}" for q in questions)
+        used_llm = False
 
-        message = f"""LexIntake intake screening summary
+        if use_llm and self.llm_ready:
+            llm_message = self._llm_write_message(
+                facts,
+                retrieval,
+                tools,
+                decision,
+                escalate=escalate,
+                questions=questions,
+            )
+            if llm_message:
+                message = llm_message
+                used_llm = True
+            else:
+                message = ""
+        else:
+            message = ""
+
+        if not message:
+            citation_lines = []
+            for cite in retrieval.citations:
+                citation_lines.append(
+                    f"- chunk_id={cite.chunk_id}; practice_area={cite.practice_area}; "
+                    f"doc_type={cite.doc_type}"
+                )
+            citations_block = (
+                "\n".join(citation_lines)
+                if citation_lines
+                else "- No KB chunks cited (insufficient retrieval matches)."
+            )
+
+            tool_summary_parts: list[str] = []
+            if tools.sol:
+                tool_summary_parts.append(
+                    f"SOL check: valid={tools.sol.get('valid')}, "
+                    f"expires_in={tools.sol.get('expires_in')} days."
+                )
+            if tools.conflict:
+                tool_summary_parts.append(
+                    f"Conflict check: conflict={tools.conflict.get('conflict')}."
+                )
+            if tools.estimate:
+                tool_summary_parts.append(
+                    f"Value estimate: ${float(tools.estimate.get('estimate') or 0):,.2f} "
+                    f"(range ${float(tools.estimate.get('range_low') or 0):,.2f}"
+                    f"–${float(tools.estimate.get('range_high') or 0):,.2f})."
+                )
+            if tools.routing:
+                tool_summary_parts.append(
+                    f"Routing: {tools.routing.get('attorney_name') or 'unassigned'}."
+                )
+            if tools.web_fallback:
+                tool_summary_parts.append("Fallback retrieval was used (local KB only).")
+
+            escalation_line = UNCERTAINTY_ESCALATION if escalate else ""
+            question_block = ""
+            if questions:
+                question_block = "Next questions:\n" + "\n".join(f"- {q}" for q in questions)
+
+            message = f"""LexIntake intake screening summary
 
 Matter: {facts.practice_area or facts.case_type or 'unspecified'}
 Jurisdiction: {facts.jurisdiction or 'unspecified'}
@@ -606,9 +813,17 @@ Next steps:
 Reminder: This assistant explains intake screening information from firm knowledge sources only. It does not provide legal advice.
 """.strip()
 
-        # Ensure disclaimer presence for self_check consumers
-        if "not legal advice" not in message.lower():
+        # Guardrail enforcement (always)
+        if LEGAL_DISCLAIMER.lower() not in message.lower() and "not legal advice" not in message.lower():
             message = f"{message}\n\n{LEGAL_DISCLAIMER}"
+        if escalate and UNCERTAINTY_ESCALATION not in message:
+            message = f"{message}\n\n{UNCERTAINTY_ESCALATION}"
+        if retrieval.citations and "chunk_id=" not in message and "KB citation" not in message:
+            cite_lines = "\n".join(
+                f"- chunk_id={c.chunk_id}; practice_area={c.practice_area}; doc_type={c.doc_type}"
+                for c in retrieval.citations
+            )
+            message = f"{message}\n\nKB citations:\n{cite_lines}"
 
         response = IntakeResponse(
             message=message,
@@ -622,8 +837,14 @@ Reminder: This assistant explains intake screening information from firm knowled
             escalate=escalate,
             confidence=decision.confidence,
             questions=questions,
+            provider=self.provider,
+            model_id=str(self.model_id or ""),
+            cost=float(self._llm_cost),
+            input_tokens=int(self._token_usage["input"]),
+            output_tokens=int(self._token_usage["output"]),
+            used_llm=used_llm,
         )
-        self._log("respond", f"escalate={escalate} score={decision.lead_score}")
+        self._log("respond", f"escalate={escalate} score={decision.lead_score} llm={used_llm}")
         return response
 
     # -- orchestration --------------------------------------------------------
@@ -631,9 +852,14 @@ Reminder: This assistant explains intake screening information from firm knowled
     def run_intake(self, facts: IntakeFacts | dict[str, Any]) -> IntakeResponse:
         """
         Execute full intake pipeline:
-        plan → retrieve → use_tools → decide → self_check → respond
+        plan → (llm refine) → retrieve → use_tools → decide → self_check → respond
         """
+        import time
+
         self._reasoning_log.clear()
+        self._token_usage = {"input": 0, "output": 0, "total": 0}
+        self._llm_cost = 0.0
+        started = time.perf_counter()
         intake = facts if isinstance(facts, IntakeFacts) else IntakeFacts.model_validate(facts)
 
         try:
@@ -654,8 +880,6 @@ Reminder: This assistant explains intake screening information from firm knowled
         if slog is not None:
             try:
                 get_metrics().start_session(slog.session_id)
-                # Deterministic token/cost estimate for local runs (no LLM required)
-                slog.log_tokens(tokens=0, cost=0.0)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -672,6 +896,8 @@ Reminder: This assistant explains intake screening information from firm knowled
                 return fn()
 
         plan = _run_step("plan", lambda: self.plan(intake))
+        if self.llm_ready:
+            plan = _run_step("plan_llm", lambda: self._llm_refine_plan(intake, plan))
         retrieval = _run_step("retrieve", lambda: self.retrieve(intake, plan))
         tools = _run_step("tools", lambda: self.use_tools(intake, plan))
         decision = _run_step(
@@ -696,25 +922,50 @@ Reminder: This assistant explains intake screening information from firm knowled
             except Exception:  # noqa: BLE001
                 pass
 
-        # Draft then self-check; repair disclaimer/citations if needed
+        # Template draft for self-check; one LLM pass for final narrative
         def _self_check_phase():
             draft_local = self.respond(
-                intake, plan, retrieval, tools, decision, SelfCheckResult(ok=True)
+                intake,
+                plan,
+                retrieval,
+                tools,
+                decision,
+                SelfCheckResult(ok=True),
+                use_llm=False,
             )
             check_local = self.self_check(draft_local.message, retrieval, decision, plan)
-            if not check_local.disclaimers_present or check_local.issues:
-                final_local = self.respond(
-                    intake, plan, retrieval, tools, decision, check_local
-                )
-            else:
-                final_local = draft_local
-                final_local.escalate = check_local.escalate or final_local.escalate
+            final_local = self.respond(
+                intake,
+                plan,
+                retrieval,
+                tools,
+                decision,
+                check_local,
+                use_llm=True,
+            )
+            final_local.escalate = check_local.escalate or final_local.escalate
             return final_local, check_local
 
         final, _check = _run_step("self-check", _self_check_phase)
 
         if final.escalate and UNCERTAINTY_ESCALATION not in final.message:
             final.message = f"{final.message}\n\n{UNCERTAINTY_ESCALATION}"
+
+        final.latency_ms = (time.perf_counter() - started) * 1000.0
+        final.cost = float(self._llm_cost)
+        final.input_tokens = int(self._token_usage["input"])
+        final.output_tokens = int(self._token_usage["output"])
+        final.provider = self.provider
+        final.model_id = str(self.model_id or "")
+
+        if slog is not None:
+            try:
+                slog.log_tokens(
+                    tokens=int(self._token_usage["total"]),
+                    cost=float(self._llm_cost),
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         if final.escalate and slog is not None:
             try:

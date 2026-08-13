@@ -182,11 +182,16 @@ def get_sqlite_connection():
 def vector_search(query: str, top_k: int = 5, practice_area: str | None = None) -> list[dict[str, Any]]:
     """Search LanceDB kb_docs; returns [] on any failure."""
     try:
-        from embeddings import HashEmbedder
+        from embeddings import get_embedder
         from lancedb_store import ensure_kb_docs, search_kb_docs
 
-        vector = HashEmbedder().embed([query])[0]
-        hits = search_kb_docs(vector, top_k=top_k, practice_area=practice_area)
+        embedder = get_embedder()
+        vector = embedder.embed([query])[0]
+        hits = search_kb_docs(
+            vector,
+            top_k=top_k,
+            practice_area=practice_area,
+        )
         try:
             table = ensure_kb_docs(dimensions=len(vector))
             total = int(table.count_rows())

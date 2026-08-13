@@ -56,6 +56,7 @@ def ensure_kb_docs(
     *,
     dimensions: int = DEFAULT_EMBEDDING_DIMS,
     db_dir: Path | str | None = None,
+    recreate_on_dim_mismatch: bool = True,
 ) -> Any:
     """
     Create the kb_docs collection if missing; open it otherwise.
@@ -66,16 +67,32 @@ def ensure_kb_docs(
     listed = connection.list_tables()
     names = set(getattr(listed, "tables", listed) or [])
     if COLLECTION_NAME in names:
-        return connection.open_table(COLLECTION_NAME)
+        table = connection.open_table(COLLECTION_NAME)
+        if recreate_on_dim_mismatch:
+            try:
+                schema = table.schema
+                # fixed_size_list<item: float>[N]
+                emb = schema.field("embedding").type
+                existing_dims = getattr(emb, "list_size", None)
+                if existing_dims and int(existing_dims) != int(dimensions):
+                    connection.drop_table(COLLECTION_NAME)
+                    names.discard(COLLECTION_NAME)
+                else:
+                    return table
+            except Exception:
+                return table
+        else:
+            return table
 
-    table = connection.create_table(
-        COLLECTION_NAME,
-        data=empty_kb_docs_table(dimensions),
-        schema=kb_docs_schema(dimensions),
-        mode="create",
-    )
-    return table
-
+    if COLLECTION_NAME not in names:
+        table = connection.create_table(
+            COLLECTION_NAME,
+            data=empty_kb_docs_table(dimensions),
+            schema=kb_docs_schema(dimensions),
+            mode="create",
+        )
+        return table
+    return connection.open_table(COLLECTION_NAME)
 
 def _as_float32_vector(values: Iterable[float], dimensions: int) -> list[float]:
     vector = [float(v) for v in values]

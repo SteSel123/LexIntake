@@ -7,7 +7,7 @@ import os
 import pyarrow as pa
 
 COLLECTION_NAME = "kb_docs"
-DEFAULT_EMBEDDING_DIMS = int(os.getenv("LEXINTAKE_EMBEDDING_DIMS", "256"))
+DEFAULT_EMBEDDING_DIMS = int(os.getenv("LEXINTAKE_EMBEDDING_DIMS", "1536"))
 
 METADATA_TYPE = pa.struct(
     [

@@ -54,12 +54,16 @@ LexIntake automates first-pass screening with an **agentic RAG** workflow: plan 
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| Agent framework | Agno | Tool decorator + Agent base class |
+| Agent framework | Agno | Tool decorator + Agent base class; reasoning + tool_choice |
 | Vector DB | LanceDB | Local, upsert by `chunk_id`, good for demos |
 | Structured DB | SQLite | Zero-ops local entities + FK relations |
-| Embeddings (current) | Deterministic hash embedder | Offline/reproducible; provider-ready interface |
+| Embeddings (default) | OpenAI `text-embedding-3-small` | Semantic RAG; configured via `.env` |
+| Embeddings (CI) | Deterministic hash embedder | Offline GitHub Actions smoke tests |
+| LLM (default) | OpenAI `gpt-4.1` | Planning refine + narrative explanations |
+| LLM (CI) | Deterministic local path | No API keys required in CI |
 | UI | Streamlit | Fast demo surface |
 | Monitoring | Custom JSONL + Streamlit | Captures required metrics without cloud lock-in |
+| CI | GitHub Actions `smoke-test` | PR checks to `main`; hash + offline eval `--limit 5` |
 
 ## 4. Knowledge base
 
@@ -82,12 +86,12 @@ Properties:
 
 ## 6. Agent workflow
 
-1. **Plan** — missing fields, tools, retrieval need, escalation flags  
-2. **Retrieve** — LanceDB search filtered by practice area / jurisdiction / doc type  
+1. **Plan** — missing fields, tools, retrieval need, escalation flags (LLM can refine tool selection)  
+2. **Retrieve** — LanceDB semantic search filtered by practice area / jurisdiction / doc type  
 3. **Tools** — SOL, conflict, estimate, route, optional fallback  
 4. **Decision / scoring** — viability + `score_lead()` decision object  
 5. **Self-check** — disclaimer, citations, unsafe language, confidence  
-6. **Respond** — user message + structured JSON for UI/eval  
+6. **Respond** — LLM narrative when configured, else template; always enforce guardrails
 
 ## 7. Tools
 
@@ -113,7 +117,7 @@ Mandatory in every response:
 
 Tracked per session:
 
-- tokens / cost (hooks ready; local path currently ~$0)
+- tokens / cost (live path estimates usage; local/CI path ~$0)
 - latency per phase
 - tool call success/duration
 - retrieval hit rate
@@ -121,6 +125,8 @@ Tracked per session:
 - escalation rate
 
 Dashboard: `python -m streamlit run monitoring/dashboard.py`
+
+CI workflow: `.github/workflows/ci.yml` (offline hash embeddings + deterministic agent).
 
 ## 10. Evaluation strategy
 
@@ -133,23 +139,24 @@ Labeled set (`evaluation/leads.csv`, ~30 leads) measures:
 5. Abstention behavior  
 6. Guardrails  
 7. Cost & latency  
-8. Provider comparison (local baseline + modeled provider costs)
+8. Provider comparison (`openai` / `anthropic` / `groq` when keys present; `local` for CI)
 
 Details: [EVALUATION_REPORT.md](EVALUATION_REPORT.md)
 
 ## 11. Git workflow (capstone)
 
-- `main` — protected production tip  
+- `main` — protected production tip (requires `smoke-test` CI)  
 - `develop` — integration  
-- `feature/*` — scoped work (kb, etl, database, tools, agent, scoring, monitoring, evaluation, ui)
+- `feature/*` — scoped work (kb, etl, database, tools, agent, scoring, monitoring, evaluation, ui, openai/ci)
 
 Pull requests are used for instructor review. Clean commits map to feature areas.
 
 ## 12. Risks & limitations
 
-- Current default path is **deterministic / offline** (hash embeddings, no live LLM). Real provider RAG is a planned upgrade.
+- Default local/dev path uses **OpenAI embeddings + gpt-4.1** when `OPENAI_API_KEY` is set; CI always uses **hash embeddings + deterministic agent**.
 - Case-value estimates depend on sparse synthetic comps; valuation accuracy is limited.
 - Conflict detection is name-similarity based, not full conflict-of-interest counsel.
+- Multi-turn conversational interview is not yet implemented (single-pass intake).
 - Not a substitute for licensed attorney review.
 
 ## 13. Stretch goals (not in MVP)
@@ -158,4 +165,4 @@ Pull requests are used for instructor review. Clean commits map to feature areas
 - Multi-agent team
 - Rich human-in-the-loop console
 - Persistent memory
-- Full CI/CD + live multi-provider eval
+- Nightly full evaluation / live multi-provider bakeoffs in CI

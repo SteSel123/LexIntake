@@ -12,7 +12,14 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = Path(__file__).resolve().parent
-for path in (str(ROOT), str(EVAL_DIR), str(ROOT / "agents"), str(ROOT / "tools"), str(ROOT / "db"), str(ROOT / "scoring")):
+for path in (
+    str(ROOT),
+    str(EVAL_DIR),
+    str(ROOT / "agents"),
+    str(ROOT / "tools"),
+    str(ROOT / "db"),
+    str(ROOT / "scoring"),
+):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -20,11 +27,13 @@ from eval_logger import EvalLogger  # noqa: E402
 from eval_metrics import EvalMetrics  # noqa: E402
 
 LEADS_PATH = EVAL_DIR / "leads.csv"
-PROVIDERS_DEFAULT = ["local", "openai", "anthropic", "groq"]
 
-# Synthetic per-provider cost/latency multipliers for comparison when no live LLM is configured.
-PROVIDER_COST = {"local": 0.0, "openai": 0.012, "anthropic": 0.014, "groq": 0.004}
-PROVIDER_LATENCY_MULT = {"local": 1.0, "openai": 1.35, "anthropic": 1.45, "groq": 0.85}
+# Live provider comparison matrix (Task 6).
+PROVIDERS: list[tuple[str, str]] = [
+    ("openai", "gpt-4.1"),
+    ("anthropic", "claude-3.5-sonnet"),
+    ("groq", "llama-3-70b"),
+]
 
 PRESCRIPTIVE_PATTERNS = [
     r"\byou should sue\b",
@@ -98,7 +107,9 @@ def acceptance_from_fields(fields: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def check_guardrails(message: str, citations: list[dict[str, Any]], escalate: bool) -> tuple[int, int, list[str]]:
+def check_guardrails(
+    message: str, citations: list[dict[str, Any]], escalate: bool
+) -> tuple[int, int, list[str]]:
     """Return (violations, checks, issues)."""
     issues: list[str] = []
     checks = 0
@@ -123,13 +134,14 @@ def check_guardrails(message: str, citations: list[dict[str, Any]], escalate: bo
         issues.append("missing_kb_citations")
 
     checks += 1
-    # Escalation phrase is required only when escalate=True; otherwise no violation.
     if escalate:
         if "escalating to a human" not in message.lower() and "insufficient data" not in message.lower():
             issues.append("missing_escalation_language")
 
     checks += 1
-    hallucinated = re.search(r"\bi invent(?:ed)?\b|\bmade-up statute\b|\bfictional case\b", message, flags=re.I)
+    hallucinated = re.search(
+        r"\bi invent(?:ed)?\b|\bmade-up statute\b|\bfictional case\b", message, flags=re.I
+    )
     if hallucinated:
         issues.append("hallucinated_legal_content")
 
@@ -186,6 +198,7 @@ def run_one_lead(
     lead_id: str,
     lead: dict[str, Any],
     provider: str,
+    model_id: str,
     agent,
     logger: EvalLogger,
 ) -> dict[str, Any]:
@@ -194,8 +207,9 @@ def run_one_lead(
 
     started = time.perf_counter()
     response = agent.run_intake(facts)
-    latency_ms = (time.perf_counter() - started) * 1000.0 * PROVIDER_LATENCY_MULT.get(provider, 1.0)
-    cost = PROVIDER_COST.get(provider, 0.0)
+    wall_ms = (time.perf_counter() - started) * 1000.0
+    latency_ms = float(getattr(response, "latency_ms", 0) or wall_ms)
+    cost = float(getattr(response, "cost", 0.0) or 0.0)
 
     scored = score_from_agent(response, fields)
     citations = [
@@ -207,8 +221,7 @@ def run_one_lead(
         for c in (response.citations or [])
     ]
     hits = len(citations)
-    # Approximate misses against requested top_k window
-    top_k = getattr(agent, "top_k", 5) or 5
+    top_k = getattr(agent, "top_k", 8) or 8
     misses = max(0, top_k - hits)
     hit_rate = hits / top_k if top_k else 0.0
 
@@ -226,6 +239,7 @@ def run_one_lead(
 
     output = {
         "provider": provider,
+        "model": model_id,
         "qualified": scored.get("qualified"),
         "lead_score": scored.get("lead_score", response.lead_score),
         "priority": scored.get("priority"),
@@ -233,10 +247,14 @@ def run_one_lead(
         "case_value_estimate": (response.tool_results or {}).get("estimate", {}).get("estimate")
         or 0.0,
         "escalate": escalate,
+        "abstention": escalate,
         "grounded": grounded,
         "retrieval_hit_rate": hit_rate,
         "latency_ms": latency_ms,
         "cost": cost,
+        "input_tokens": int(getattr(response, "input_tokens", 0) or 0),
+        "output_tokens": int(getattr(response, "output_tokens", 0) or 0),
+        "used_llm": bool(getattr(response, "used_llm", False)),
         "guardrail_violations": violations,
         "guardrail_checks": checks,
         "citations_count": hits,
@@ -246,6 +264,7 @@ def run_one_lead(
         lead_id,
         input_data={
             "provider": provider,
+            "model": model_id,
             "practice_area": fields.get("practice_area"),
             "jurisdiction": fields.get("jurisdiction"),
             "expected_qualification": lead.get("expected_qualification"),
@@ -283,13 +302,30 @@ def print_summary(summary: dict[str, Any]) -> None:
         )
 
 
+def parse_providers(raw: str) -> list[tuple[str, str]]:
+    """Parse `openai:gpt-4.1,anthropic:claude-3.5-sonnet` or bare provider names."""
+    defaults = {p: m for p, m in PROVIDERS}
+    out: list[tuple[str, str]] = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            provider, model = item.split(":", 1)
+            out.append((provider.strip().lower(), model.strip()))
+        else:
+            provider = item.lower()
+            out.append((provider, defaults.get(provider, provider)))
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run LexIntake evaluation suite")
     parser.add_argument("--leads", default=str(LEADS_PATH), help="Path to leads.csv")
     parser.add_argument(
         "--providers",
-        default=",".join(PROVIDERS_DEFAULT),
-        help="Comma-separated providers: local,openai,anthropic,groq",
+        default=",".join(f"{p}:{m}" for p, m in PROVIDERS),
+        help="Comma-separated provider:model pairs",
     )
     parser.add_argument(
         "--limit",
@@ -297,45 +333,84 @@ def main() -> None:
         default=0,
         help="Optional limit of leads (0 = all)",
     )
+    parser.add_argument(
+        "--skip-unavailable",
+        action="store_true",
+        default=True,
+        help="Skip providers missing API keys (default: true)",
+    )
+    parser.add_argument(
+        "--require-all",
+        action="store_true",
+        help="Fail if any requested provider is unavailable",
+    )
     args = parser.parse_args()
 
     leads = load_leads(Path(args.leads))
     if args.limit and args.limit > 0:
         leads = leads[: args.limit]
-    providers = [p.strip() for p in args.providers.split(",") if p.strip()]
+    providers = parse_providers(args.providers)
 
     from agents.intake_agent import IntakeAgent
+    from agents.llm import provider_available
 
-    agent = IntakeAgent()
     logger = EvalLogger()
     metrics = EvalMetrics()
 
+    ready: list[tuple[str, str, Any]] = []
+    for provider, model_id in providers:
+        if not provider_available(provider):
+            msg = f"Provider {provider} unavailable (missing API key)."
+            if args.require_all:
+                raise RuntimeError(msg)
+            print(f"SKIP {msg}")
+            continue
+        try:
+            if provider in {"local", "deterministic", "hash", "none"}:
+                agent = IntakeAgent(
+                    model=None,
+                    provider="local",
+                    model_id="deterministic",
+                    top_k=8,
+                )
+            else:
+                agent = IntakeAgent(provider=provider, model_id=model_id, top_k=8)
+                if not agent.llm_ready:
+                    print(f"SKIP {provider}/{model_id}: model failed to initialize")
+                    continue
+            ready.append((provider, model_id, agent))
+            print(f"READY {provider}/{model_id}")
+        except Exception as exc:  # noqa: BLE001
+            if args.require_all:
+                raise
+            print(f"SKIP {provider}/{model_id}: {exc}")
+
+    if not ready:
+        # Deterministic fallback so local offline eval still works.
+        print("No live LLM providers available; running deterministic fallback agent.")
+        ready.append(("local", "deterministic", IntakeAgent(model=None, provider="local", model_id="deterministic")))
+
     for idx, lead in enumerate(leads, start=1):
         lead_id = f"lead-{idx:03d}"
-        # Primary local end-to-end evaluation
-        primary = run_one_lead(
-            lead_id=lead_id,
-            lead=lead,
-            provider="local",
-            agent=agent,
-            logger=logger,
-        )
-        metrics.update(lead, primary)
-
-        # Provider comparison on the same lead (deterministic local engine + provider cost/latency model)
-        metrics.add_provider_result(lead, primary)
-        for provider in providers:
-            if provider == "local":
-                continue
-            # Reuse same behavioral output; compare cost/latency/provider tagging
-            compared = dict(primary)
-            compared["provider"] = provider
-            compared["cost"] = PROVIDER_COST.get(provider, 0.0)
-            compared["latency_ms"] = float(primary["latency_ms"]) * PROVIDER_LATENCY_MULT.get(
-                provider, 1.0
+        for provider, model_id, agent in ready:
+            result = run_one_lead(
+                lead_id=lead_id,
+                lead=lead,
+                provider=provider,
+                model_id=model_id,
+                agent=agent,
+                logger=logger,
             )
-            logger.log_provider_result(provider, lead_id, compared)
-            metrics.add_provider_result(lead, compared)
+            # Primary metrics track first provider; all go into provider comparison.
+            if provider == ready[0][0]:
+                metrics.update(lead, result)
+            metrics.add_provider_result(lead, result)
+            print(
+                f"{lead_id} {provider}/{model_id}: "
+                f"decision={result['decision']} grounded={result['grounded']} "
+                f"escalate={result['escalate']} "
+                f"latency_ms={result['latency_ms']:.0f} cost=${result['cost']:.4f}"
+            )
 
     summary = metrics.summary()
     logger.log_metrics(summary)
