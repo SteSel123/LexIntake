@@ -24,6 +24,7 @@ jobs:
       LEXINTAKE_EMBEDDING_DIMS: "256"
       LEXINTAKE_LLM_PROVIDER: local
       LEXINTAKE_LLM_MODEL: deterministic
+      LEXINTAKE_AGNO_TRACING: "0"
       OPENAI_API_KEY: ""
       ANTHROPIC_API_KEY: ""
       GROQ_API_KEY: ""

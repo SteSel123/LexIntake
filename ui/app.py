@@ -1,4 +1,4 @@
-"""LexIntake Streamlit UI — intake analysis demo."""
+"""LexIntake Streamlit UI — multi-turn interview + quick analysis."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import streamlit as st
 
 UI_DIR = Path(__file__).resolve().parent
 ROOT = UI_DIR.parent
-for path in (str(ROOT), str(UI_DIR)):
+for path in (str(ROOT), str(UI_DIR), str(ROOT / "agents")):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -17,7 +17,7 @@ from components.disclaimer import render_disclaimer
 from components.footer import render_footer
 from components.header import render_header
 from components.result_viewer import render_results
-from runner import run_intake_analysis
+from runner import LEGAL_DISCLAIMER, build_result_payload, run_intake_analysis
 
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap');
@@ -41,9 +41,6 @@ CUSTOM_CSS = """
   font-family: "Source Sans 3", sans-serif;
 }
 
-.li-hero {
-  padding: 1.2rem 0 0.4rem 0;
-}
 .li-brand {
   font-family: Fraunces, Georgia, serif;
   font-size: 3rem;
@@ -102,26 +99,80 @@ EXAMPLES = {
 }
 
 
-def main() -> None:
-    st.set_page_config(
-        page_title="LexIntake",
-        page_icon="⚖️",
-        layout="wide",
-        initial_sidebar_state="expanded",
+def _ensure_interview():
+    from agents.interview import InterviewSession
+
+    if "interview" not in st.session_state:
+        session = InterviewSession()
+        opening = session.start()
+        st.session_state["interview"] = session
+        st.session_state["interview_messages"] = [
+            {"role": "assistant", "content": opening.assistant_message}
+        ]
+        st.session_state["interview_done"] = False
+        st.session_state.pop("interview_result", None)
+
+
+def _render_interview_tab() -> None:
+    st.markdown("### Prospective client interview")
+    st.caption(
+        "Multi-turn intake: the agent asks follow-up questions, then screens the lead. "
+        + LEGAL_DISCLAIMER
     )
-    st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
 
-    render_header()
-    render_disclaimer(compact=True)
+    _ensure_interview()
 
+    cols = st.columns([1, 1, 2])
+    if cols[0].button("Restart interview"):
+        st.session_state.pop("interview", None)
+        st.session_state.pop("interview_messages", None)
+        st.session_state.pop("interview_done", None)
+        st.session_state.pop("interview_result", None)
+        _ensure_interview()
+        st.rerun()
+
+    for msg in st.session_state.get("interview_messages", []):
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if st.session_state.get("interview_done"):
+        st.info("Interview complete. Restart to screen another lead.")
+        if "interview_result" in st.session_state:
+            st.markdown("## Screening result")
+            render_results(st.session_state["interview_result"])
+        return
+
+    prompt = st.chat_input("Answer the agent’s question or describe your matter…")
+    if not prompt:
+        return
+
+    st.session_state["interview_messages"].append({"role": "user", "content": prompt})
+    session = st.session_state["interview"]
+    with st.spinner("Updating intake…"):
+        turn = session.respond(prompt)
+    st.session_state["interview_messages"].append(
+        {"role": "assistant", "content": turn.assistant_message}
+    )
+
+    if turn.done and turn.screening is not None:
+        st.session_state["interview_done"] = True
+        narrative = turn.facts.narrative or prompt
+        payload = build_result_payload(turn.screening, turn.facts, narrative)
+        payload["latency_ms"] = float(getattr(turn.screening, "latency_ms", 0) or 0)
+        payload["cost"] = float(getattr(turn.screening, "cost", 0) or 0)
+        payload["parsed_facts"] = turn.facts.model_dump()
+        st.session_state["interview_result"] = payload
+    st.rerun()
+
+
+def _render_quick_tab() -> None:
     with st.sidebar:
         st.markdown("### Demo scenarios")
         choice = st.selectbox("Load example", ["(custom)"] + list(EXAMPLES.keys()))
         if choice != "(custom)" and st.button("Insert example"):
             st.session_state["case_description"] = EXAMPLES[choice]
-
         st.markdown("---")
-        st.caption("Pipeline: plan → retrieve → tools → scoring → guardrails")
+        st.caption("Single-pass: plan → retrieve → tools → scoring → guardrails")
 
     description = st.text_area(
         "Case description",
@@ -135,7 +186,6 @@ def main() -> None:
     )
 
     run = st.button("Run Intake Analysis", type="primary")
-
     if run:
         if not description.strip():
             st.warning("Enter a case description first.")
@@ -151,6 +201,36 @@ def main() -> None:
     if "last_result" in st.session_state:
         st.markdown("## Analysis result")
         render_results(st.session_state["last_result"])
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="LexIntake",
+        page_icon="⚖️",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
+
+    render_header()
+    render_disclaimer(compact=True)
+
+    try:
+        from config import OPENAI_API_KEY
+
+        if not OPENAI_API_KEY:
+            st.warning(
+                "OPENAI_API_KEY is empty in `.env`. "
+                "Set a new key for live embeddings/LLM; offline hash/deterministic still works for demos."
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    tab_interview, tab_quick = st.tabs(["Interview (multi-turn)", "Quick analysis"])
+    with tab_interview:
+        _render_interview_tab()
+    with tab_quick:
+        _render_quick_tab()
 
     render_footer()
 

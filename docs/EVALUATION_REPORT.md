@@ -124,10 +124,10 @@ Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrai
 **Gaps**
 
 - Qualification/score/value label alignment needs calibration
-- Multi-turn interview UX not yet built
 - Case-value comps need denser synthetic history
+- Demo video recording is still a manual deliverable
 
-**Recommendation for grading demo:** emphasize guardrails, grounding, ETL/idempotency, OpenAI RAG path, CI smoke, and end-to-end UI; present evaluation numbers transparently with calibration as next iteration.
+**Recommendation for grading demo:** emphasize multi-turn interview, guardrails, grounding, ETL/idempotency, OpenAI RAG path, Agno tracing, CI smoke, and end-to-end UI; present evaluation numbers transparently with calibration as next iteration.
 
 ## 6. How to reproduce
 

@@ -10,9 +10,11 @@ Agentic RAG intake system for law firms. Prospective leads are screened for prac
 - Re-runnable / idempotent / incremental ETL → LanceDB
 - Structured entities in SQLite (`clients`, `attorneys`, `past_cases`)
 - Agno tools: SOL check, conflict check, case value, routing, fallback
-- Intake agent: plan → retrieve → tools → score → self-check → respond
-- Lead scoring engine with explicit decisions (`SCHEDULE_CONSULT` / `REVIEW` / `REJECT`)
-- Monitoring dashboard + evaluation harness + Streamlit UI demo
+- Intake agent: plan → retrieve → **agentic tool selection** (`Agent.run`) → score → self-check → respond  
+- Multi-turn **Interview** tab for prospective clients  
+- Lead scoring engine with explicit decisions (`SCHEDULE_CONSULT` / `REVIEW` / `REJECT`)  
+- Monitoring: JSONL metrics + Streamlit dashboard + **Agno native tracing**  
+- Evaluation harness + Streamlit UI demo
 
 ## Quick start
 
