@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import sys
 import time
-from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,122 +19,11 @@ for path in (
     if path not in sys.path:
         sys.path.insert(0, path)
 
+from agents.fact_parse import parse_case_description  # noqa: E402
 from agents.intake_agent import IntakeAgent, IntakeFacts, IntakeResponse  # noqa: E402
 from scoring.lead_scoring import score_lead  # noqa: E402
 
 LEGAL_DISCLAIMER = "This is not legal advice. Consult a licensed attorney."
-
-_PRACTICE_HINTS = [
-    ("personal injury", "Personal Injury"),
-    ("rear-end", "Personal Injury"),
-    ("slip-and-fall", "Personal Injury"),
-    ("slip and fall", "Personal Injury"),
-    ("collision", "Personal Injury"),
-    ("employment", "Employment Law"),
-    ("discrimination", "Employment Law"),
-    ("immigration", "Immigration"),
-    ("asylum", "Immigration"),
-    ("family", "Family Law"),
-    ("custody", "Family Law"),
-    ("divorce", "Family Law"),
-    ("workers", "Workers’ Compensation"),
-    ("malpractice", "Medical Malpractice"),
-    ("product", "Product Liability"),
-    ("civil rights", "Civil Rights"),
-    ("consumer", "Consumer Protection"),
-    ("criminal", "Criminal Defense"),
-]
-
-_STATE_RE = re.compile(r"\b(CA|NV|AZ|TX|FL|NY|WA|IL|OR|CO|GA)\b", re.I)
-_MONEY_RE = re.compile(r"\$?\s*([\d,]+(?:\.\d+)?)\s*k\b|\$\s*([\d,]+(?:\.\d+)?)", re.I)
-_YEARS_AGO_RE = re.compile(r"(\d+)\s*years?\s*ago", re.I)
-_MONTHS_AGO_RE = re.compile(r"(\d+)\s*months?\s*ago", re.I)
-
-
-def _today() -> date:
-    return datetime.now(timezone.utc).date()
-
-
-def _infer_practice_area(text: str) -> str | None:
-    lower = text.lower()
-    for needle, area in _PRACTICE_HINTS:
-        if needle in lower:
-            return area
-    return None
-
-
-def _infer_damages(text: str) -> int | None:
-    match = _MONEY_RE.search(text)
-    if not match:
-        return None
-    if match.group(1):
-        return int(float(match.group(1).replace(",", "")) * 1000)
-    if match.group(2):
-        return int(float(match.group(2).replace(",", "")))
-    return None
-
-
-def _infer_incident_date(text: str) -> str | None:
-    years = _YEARS_AGO_RE.search(text)
-    if years:
-        d = _today().replace(year=_today().year - int(years.group(1)))
-        return d.isoformat()
-    months = _MONTHS_AGO_RE.search(text)
-    if months:
-        # Approximate months as 30 days for deterministic demo behavior
-        ordinal = _today().toordinal() - int(months.group(1)) * 30
-        return date.fromordinal(max(1, ordinal)).isoformat()
-    iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
-    if iso:
-        return iso.group(1)
-    return None
-
-
-def _infer_severity(text: str) -> str:
-    lower = text.lower()
-    if any(w in lower for w in ("catastrophic", "icu", "death", "severe")):
-        return "high"
-    if any(w in lower for w in ("moderate", "surgery")):
-        return "medium"
-    if any(w in lower for w in ("minor", "unclear", "missing")):
-        return "low"
-    return "medium"
-
-
-def _infer_name_and_party(text: str) -> tuple[str, str]:
-    lower = text.lower()
-    # Demo conflict scenario: use known client so conflict_check fires.
-    if "acme" in lower and "employment" in lower:
-        return "Elena Vasquez", "ACME Corp"
-    if "opposing party" in lower:
-        m = re.search(r"opposing party(?:\s+is)?\s+([A-Za-z0-9 .,&-]+)", text, flags=re.I)
-        if m:
-            return "Demo Prospect", m.group(1).strip(" .")
-    return "Demo Prospect", "Unknown Party"
-
-
-def parse_case_description(description: str) -> IntakeFacts:
-    text = (description or "").strip()
-    practice = _infer_practice_area(text)
-    state = _STATE_RE.search(text)
-    jurisdiction = state.group(1).upper() if state else None
-    name, opposing = _infer_name_and_party(text)
-    damages = _infer_damages(text)
-    severity = _infer_severity(text)
-    priority = "high" if severity == "high" else ("low" if severity == "low" else "medium")
-
-    return IntakeFacts(
-        name=name,
-        opposing_party=opposing,
-        practice_area=practice,
-        case_type=practice,
-        jurisdiction=jurisdiction,
-        incident_date=_infer_incident_date(text),
-        severity=severity,
-        damages=damages,
-        priority=priority,  # type: ignore[arg-type]
-        narrative=text,
-    )
 
 
 def _acceptance_for_text(text: str, practice_area: str | None) -> dict[str, Any]:
@@ -205,7 +92,6 @@ def build_result_payload(response: IntakeResponse, facts: IntakeFacts, descripti
     )
     payload = scored.model_dump()
 
-    # Incomplete / uncertain intakes should surface as human review when not hard-rejected.
     if uncertain and scored.decision != "REJECT":
         payload["decision"] = "REVIEW"
         payload["priority"] = "Medium"
@@ -214,7 +100,12 @@ def build_result_payload(response: IntakeResponse, facts: IntakeFacts, descripti
             "Insufficient data — escalating to a human intake specialist. "
             + str(payload.get("explanation") or "")
         )
-    elif uncertain and scored.decision == "REJECT" and not conflict.get("conflict") and sol.get("valid") is not False:
+    elif (
+        uncertain
+        and scored.decision == "REJECT"
+        and not conflict.get("conflict")
+        and sol.get("valid") is not False
+    ):
         payload["decision"] = "REVIEW"
         payload["priority"] = "Medium"
         payload["qualified"] = True
@@ -226,9 +117,7 @@ def build_result_payload(response: IntakeResponse, facts: IntakeFacts, descripti
 
     payload["citations"] = citations
     payload["escalate"] = bool(
-        response.escalate
-        or payload.get("decision") == "REVIEW"
-        or uncertain
+        response.escalate or payload.get("decision") == "REVIEW" or uncertain
     )
     payload["guardrails"] = {
         "disclaimer_present": "not legal advice" in (response.message or "").lower()
@@ -259,6 +148,6 @@ def run_intake_analysis(
     latency_ms = (time.perf_counter() - started) * 1000.0
     payload = build_result_payload(response, facts, description)
     payload["latency_ms"] = round(latency_ms, 2)
-    payload["cost"] = 0.0  # local deterministic path
+    payload["cost"] = float(getattr(response, "cost", 0.0) or 0.0)
     payload["parsed_facts"] = facts.model_dump()
     return payload

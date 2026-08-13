@@ -187,6 +187,40 @@ def render() -> None:
     with st.expander("Raw daily summary (metadata only)"):
         st.json(daily)
 
+    st.header("4. Agno Monitoring (native traces)")
+    st.caption("OpenTelemetry traces stored in monitoring/traces.db via agno.tracing.setup_tracing")
+    try:
+        from monitoring.agno_tracing import (
+            TRACES_DB,
+            enable_agno_monitoring,
+            recent_traces,
+            tracing_enabled,
+        )
+
+        t1, t2 = st.columns(2)
+        with t1:
+            if st.button("Enable / refresh Agno tracing"):
+                enable_agno_monitoring(force=True)
+                st.rerun()
+        with t2:
+            st.write(
+                {
+                    "enabled": tracing_enabled(),
+                    "traces_db": str(TRACES_DB),
+                    "db_exists": TRACES_DB.exists(),
+                }
+            )
+        traces = recent_traces(limit=15)
+        if traces:
+            st.dataframe(traces, use_container_width=True)
+        else:
+            st.info(
+                "No Agno traces yet. Run an intake with a live LLM "
+                "(LEXINTAKE_AGNO_TRACING=1) to populate traces.db."
+            )
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Agno tracing panel unavailable: {exc}")
+
 
 def _day_fallback() -> str:
     from datetime import datetime, timezone

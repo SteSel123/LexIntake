@@ -199,6 +199,14 @@ class IntakeAgent(Agent):
         elif self.provider in {"local", "deterministic", "hash", "none"}:
             llm = None
 
+        # Agno Monitoring (native tracing) — no-op in offline CI
+        try:
+            from monitoring.agno_tracing import enable_agno_monitoring
+
+            enable_agno_monitoring()
+        except Exception:  # noqa: BLE001
+            pass
+
         super().__init__(
             name="LexIntake Intake Agent",
             model=llm,
@@ -507,6 +515,115 @@ Follow-up questions: {questions}
         return RetrieveResult(chunks=collected, citations=citations)
 
     def use_tools(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
+        """Invoke tools — prefer Agno Agent.run tool loop when LLM is ready."""
+        if self.llm_ready:
+            try:
+                agentic = self._use_tools_agentic(facts, plan)
+                if agentic and any(
+                    [
+                        agentic.sol,
+                        agentic.conflict,
+                        agentic.estimate,
+                        agentic.routing,
+                        agentic.web_fallback,
+                    ]
+                ):
+                    self._log("tools", "agentic Agent.run tool_choice=auto")
+                    return agentic
+            except Exception as exc:  # noqa: BLE001
+                self._log("tools", f"agentic path failed, falling back: {exc}")
+        return self._use_tools_deterministic(facts, plan)
+
+    def _parse_tool_payload(self, value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            import json
+
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {"raw": value}
+            except Exception:  # noqa: BLE001
+                return {"raw": value}
+        return {"raw": str(value)}
+
+    def _use_tools_agentic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
+        """Let the LLM choose and call tools via Agno Agent.run."""
+        case_type = facts.case_type or facts.practice_area or ""
+        prompt = f"""Screen this intake lead by calling the appropriate tools now.
+
+Facts (JSON):
+{facts.model_dump_json()}
+
+Suggested tools (you may add/remove as needed): {plan.tools_to_call}
+Available tools:
+- check_statute_of_limitations(jurisdiction, case_type, incident_date)
+- conflict_check(name, opposing_party)
+- estimate_case_value(case_type, severity, damages)
+- route_lead(practice_area, priority)
+- web_search_fallback(query) only if KB seems insufficient
+
+Rules:
+- Call tools with concrete arguments from the facts.
+- Do not give legal advice.
+- After tools complete, reply with one short sentence confirming tool results were collected.
+"""
+        run_out = self.run(prompt)
+        result = ToolPhaseResult()
+        tool_rows = getattr(run_out, "tools", None) or []
+        for row in tool_rows:
+            name = (
+                getattr(row, "tool_name", None)
+                or getattr(row, "name", None)
+                or getattr(row, "function", None)
+                or ""
+            )
+            name = str(name).lower()
+            payload = self._parse_tool_payload(
+                getattr(row, "result", None)
+                or getattr(row, "content", None)
+                or getattr(row, "tool_args", None)
+            )
+            if "statute" in name or "sol" in name:
+                result.sol = payload
+            elif "conflict" in name:
+                result.conflict = payload
+            elif "estimate" in name or "case_value" in name:
+                result.estimate = payload
+            elif "route" in name:
+                result.routing = payload
+            elif "web_search" in name or "fallback" in name:
+                result.web_fallback = payload
+
+        # If the model skipped a critical tool, fill deterministically.
+        det = self._use_tools_deterministic(facts, plan)
+        if not result.sol and det.sol:
+            result.sol = det.sol
+        if not result.conflict and det.conflict:
+            result.conflict = det.conflict
+        if not result.estimate and det.estimate:
+            result.estimate = det.estimate
+        if not result.routing and det.routing:
+            result.routing = det.routing
+
+        # Capture usage metrics from the agentic run when present
+        metrics = getattr(run_out, "metrics", None)
+        if metrics is not None:
+            in_tok = int(getattr(metrics, "input_tokens", 0) or 0)
+            out_tok = int(getattr(metrics, "output_tokens", 0) or 0)
+            self._token_usage["input"] += in_tok
+            self._token_usage["output"] += out_tok
+            self._token_usage["total"] += in_tok + out_tok
+            self._llm_cost += self._estimate_cost(in_tok, out_tok)
+
+        _ = case_type  # retained for clarity / future prompts
+        return result
+
+    def _use_tools_deterministic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
         """Deterministically invoke planned Agno tools and merge outputs."""
         result = ToolPhaseResult()
         case_type = facts.case_type or facts.practice_area or ""
@@ -860,7 +977,18 @@ Reminder: This assistant explains intake screening information from firm knowled
         self._token_usage = {"input": 0, "output": 0, "total": 0}
         self._llm_cost = 0.0
         started = time.perf_counter()
-        intake = facts if isinstance(facts, IntakeFacts) else IntakeFacts.model_validate(facts)
+        intake = (
+            facts
+            if type(facts).__name__ == "IntakeFacts" and hasattr(facts, "model_dump")
+            else IntakeFacts.model_validate(
+                facts.model_dump() if hasattr(facts, "model_dump") else facts
+            )
+        )
+        # Re-bind to this module's model to avoid dual-import class identity issues.
+        if not isinstance(intake, IntakeFacts):
+            intake = IntakeFacts.model_validate(intake.model_dump())
+        elif type(intake) is not IntakeFacts:
+            intake = IntakeFacts.model_validate(intake.model_dump())
 
         try:
             from monitoring.logger import (

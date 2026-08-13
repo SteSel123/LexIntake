@@ -62,7 +62,7 @@ LexIntake automates first-pass screening with an **agentic RAG** workflow: plan 
 | LLM (default) | OpenAI `gpt-4.1` | Planning refine + narrative explanations |
 | LLM (CI) | Deterministic local path | No API keys required in CI |
 | UI | Streamlit | Fast demo surface |
-| Monitoring | Custom JSONL + Streamlit | Captures required metrics without cloud lock-in |
+| Monitoring | Custom JSONL + Streamlit + **Agno tracing** | Capstone metrics + native Agno spans |
 | CI | GitHub Actions `smoke-test` | PR checks to `main`; hash + offline eval `--limit 5` |
 
 ## 4. Knowledge base
@@ -153,10 +153,11 @@ Pull requests are used for instructor review. Clean commits map to feature areas
 
 ## 12. Risks & limitations
 
+- Multi-turn conversational interview is available in the Streamlit **Interview** tab (`agents/interview.py`).
 - Default local/dev path uses **OpenAI embeddings + gpt-4.1** when `OPENAI_API_KEY` is set; CI always uses **hash embeddings + deterministic agent**.
+- Observability uses custom JSONL metrics **and** Agno native tracing (`monitoring/agno_tracing.py` → `monitoring/traces.db`).
 - Case-value estimates depend on sparse synthetic comps; valuation accuracy is limited.
 - Conflict detection is name-similarity based, not full conflict-of-interest counsel.
-- Multi-turn conversational interview is not yet implemented (single-pass intake).
 - Not a substitute for licensed attorney review.
 
 ## 13. Stretch goals (not in MVP)
