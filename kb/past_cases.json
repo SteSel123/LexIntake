@@ -1,0 +1,182 @@
+{
+  "Personal Injury": [
+    {
+      "title": "Rear-End Freeway Collision with Cervical Fusion",
+      "facts": "Client was stopped in traffic on I-15 when a commercial van struck the rear of their sedan at approximately 45 mph. Client underwent conservative care then C5-C6 fusion. Liability admitted; dispute centered on damages and pre-existing degeneration.",
+      "jurisdiction": "NV",
+      "outcome": "settled",
+      "settlement_or_award_usd": 485000,
+      "year": 2024
+    },
+    {
+      "title": "Supermarket Slip-and-Fall on Undisclosed Spill",
+      "facts": "Client slipped on an unmarked liquid near the produce section. Store video showed spill present for 18+ minutes without cleanup. Ankle fracture required ORIF surgery and 4 months off work.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 210000,
+      "year": 2023
+    }
+  ],
+  "Employment Law": [
+    {
+      "title": "Pregnancy Discrimination After Leave Request",
+      "facts": "Retail manager requested pregnancy accommodation and scheduled leave. Within three weeks she was placed on a PIP for metrics previously rated meets-expectations, then terminated. Emails showed HR discussing 'coverage problems if she goes out.'",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 175000,
+      "year": 2024
+    },
+    {
+      "title": "Unpaid Overtime for Misclassified Assistant Managers",
+      "facts": "Three assistant managers regularly worked 50–55 hours/week but were classified exempt despite spending most time on non-exempt tasks. Collective settlement for unpaid overtime and waiting-time penalties.",
+      "jurisdiction": "NY",
+      "outcome": "settled",
+      "settlement_or_award_usd": 320000,
+      "year": 2023
+    }
+  ],
+  "Immigration": [
+    {
+      "title": "Asylum Grant for Political Journalist",
+      "facts": "Client fled targeted threats after publishing corruption investigations. Affirmative asylum filed with corroborating country-conditions evidence and expert declaration. Asylum granted after interview.",
+      "jurisdiction": "CA",
+      "outcome": "granted",
+      "settlement_or_award_usd": null,
+      "year": 2024
+    },
+    {
+      "title": "I-751 Waiver After Divorce from Abusive USC Spouse",
+      "facts": "Client entered on K-1, later divorced due to documented domestic abuse. Filed I-751 with waiver, police reports, and psychological evaluation. Conditional residence removed.",
+      "jurisdiction": "TX",
+      "outcome": "approved",
+      "settlement_or_award_usd": null,
+      "year": 2023
+    }
+  ],
+  "Family Law": [
+    {
+      "title": "Custody Modification After Relocation Attempt",
+      "facts": "Custodial parent attempted unilateral move out of state. Noncustodial parent sought modification and restraint. Court ordered shared legal custody, primary physical to moving parent only if move delayed, with expanded parenting time and travel cost allocation.",
+      "jurisdiction": "AZ",
+      "outcome": "judgment",
+      "settlement_or_award_usd": null,
+      "year": 2024
+    },
+    {
+      "title": "High-Asset Divorce with Business Valuation",
+      "facts": "10-year marriage involving closely held LLC. Parties mediated division of business interests, residence equity, and spousal support using neutral valuation.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 2100000,
+      "year": 2023
+    }
+  ],
+  "Criminal Defense": [
+    {
+      "title": "Felony Assault Reduced After Self-Defense Investigation",
+      "facts": "Client charged with felony assault after bar altercation. Independent witnesses and injuries consistent with defensive wounds. Negotiated reduction to misdemeanor disturbing the peace with dismissal after anger-management compliance.",
+      "jurisdiction": "CA",
+      "outcome": "reduced_plea",
+      "settlement_or_award_usd": null,
+      "year": 2024
+    },
+    {
+      "title": "First-Offense DUI with Breath-Test Challenge",
+      "facts": "Client arrested after traffic stop; observation period and machine maintenance logs incomplete. Plea to wet reckless, no jail, restricted license with IID condition.",
+      "jurisdiction": "NV",
+      "outcome": "reduced_plea",
+      "settlement_or_award_usd": null,
+      "year": 2023
+    }
+  ],
+  "Workers’ Compensation": [
+    {
+      "title": "Warehouse Shoulder Injury with Permanent Disability",
+      "facts": "Picker fell from ladder; rotator cuff tear and surgery. Carrier delayed authorization. Case resolved with PD indemnity, future medical award, and penalty petition settlement.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 92000,
+      "year": 2024
+    },
+    {
+      "title": "Occupational Asthma in Hotel Housekeeping",
+      "facts": "Worker developed occupational asthma linked to cleaning chemicals after years of exposure. AOE/COE disputed then accepted after industrial hygiene evidence. Stipulated award for PD and ongoing meds.",
+      "jurisdiction": "NV",
+      "outcome": "stipulated_award",
+      "settlement_or_award_usd": 61000,
+      "year": 2023
+    }
+  ],
+  "Medical Malpractice": [
+    {
+      "title": "Delayed Diagnosis of Appendicitis Leading to Sepsis",
+      "facts": "ER discharged patient with 'gastroenteritis' despite rebound tenderness and elevated WBC. Returned 36 hours later with ruptured appendix and sepsis; extended ICU stay. Case settled after surgical standard-of-care affidavits.",
+      "jurisdiction": "FL",
+      "outcome": "settled",
+      "settlement_or_award_usd": 900000,
+      "year": 2024
+    },
+    {
+      "title": "Wrong-Level Spinal Surgery",
+      "facts": "Surgeon operated one level above the planned lumbar decompression. Patient required revision surgery and sustained persistent foot drop. Settled confidentially after liability concession on wrong-site protocol breach.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 1250000,
+      "year": 2023
+    }
+  ],
+  "Product Liability": [
+    {
+      "title": "Exploding Lithium Battery in E-Bike",
+      "facts": "Aftermarket battery pack ignited while charging in garage, causing burns and property damage. Defective cell design and missing thermal protections identified by engineering expert. Manufacturer settled pre-trial.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 675000,
+      "year": 2024
+    },
+    {
+      "title": "Tip-Over Dressing Table Injury to Toddler",
+      "facts": "Unanchored dresser tipped despite being marketed as 'tip-resistant.' Toddler sustained skull fracture. Retailer and manufacturer contributed to settlement; product preserved for testing.",
+      "jurisdiction": "IL",
+      "outcome": "settled",
+      "settlement_or_award_usd": 540000,
+      "year": 2023
+    }
+  ],
+  "Civil Rights": [
+    {
+      "title": "Excessive Force During Traffic Stop",
+      "facts": "Unarmed motorist pulled from vehicle and struck after providing license. Bodycam contradicted officer narrative. Medical records documented orbital fracture. Settled after Monell discovery on use-of-force training gaps.",
+      "jurisdiction": "IL",
+      "outcome": "settled",
+      "settlement_or_award_usd": 450000,
+      "year": 2024
+    },
+    {
+      "title": "First Amendment Retaliation Against Local Critic",
+      "facts": "City inspector issued serial citations after resident criticized mayor at public comment. Comparator evidence showed similarly situated properties untreated. Settled with damages and injunctive relief on inspection protocols.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 185000,
+      "year": 2023
+    }
+  ],
+  "Consumer Protection": [
+    {
+      "title": "Auto Dealer Yo-Yo Financing and Hidden Add-Ons",
+      "facts": "Dealer recalled vehicle after 'financing fell through,' then re-contracted at higher APR with unwanted etch/GAP products. CLRA/UCL claims settled for rescission differential, statutory damages, and fees.",
+      "jurisdiction": "CA",
+      "outcome": "settled",
+      "settlement_or_award_usd": 42000,
+      "year": 2024
+    },
+    {
+      "title": "Debt Collector Calls After Cease-and-Desist",
+      "facts": "Collector continued calling client’s workplace after written cease communication and disputed debt validation. FDCPA suit settled for statutory and actual damages plus attorney’s fees.",
+      "jurisdiction": "NY",
+      "outcome": "settled",
+      "settlement_or_award_usd": 12500,
+      "year": 2023
+    }
+  ]
+}

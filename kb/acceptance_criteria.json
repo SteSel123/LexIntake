@@ -1,0 +1,277 @@
+{
+  "Personal Injury": {
+    "jurisdictions": ["CA", "NV", "AZ", "TX", "FL"],
+    "must_have": [
+      "Identifiable at-fault party or liable entity",
+      "Documented physical injury or verifiable medical treatment",
+      "Incident date within applicable SOL for the jurisdiction",
+      "Clear causal link between incident and claimed injuries"
+    ],
+    "nice_to_have": [
+      "Police or incident report",
+      "Medical records and bills",
+      "Photos of scene/injuries",
+      "Witness contact information",
+      "Insurance policy details for all parties"
+    ],
+    "auto_decline": [
+      "SOL expired with no viable tolling theory",
+      "No compensable injury (property-only with no injury claim)",
+      "Client solely at fault with no comparative-fault recovery path",
+      "Conflict of interest with existing client or adverse party",
+      "Estimated recoverable damages below firm minimum ($7,500)"
+    ],
+    "intake_questions": [
+      "When and where did the incident occur?",
+      "Who do you believe was at fault and why?",
+      "What injuries did you sustain and what treatment have you received?",
+      "Have you spoken to any insurance adjusters or signed any releases?"
+    ]
+  },
+  "Employment Law": {
+    "jurisdictions": ["CA", "NV", "NY", "WA", "IL"],
+    "must_have": [
+      "Employer–employee or covered-worker relationship",
+      "Specific adverse action, discrimination, harassment, or wage claim theory",
+      "Incident(s) within administrative and civil filing deadlines",
+      "Named employer and work location/jurisdiction"
+    ],
+    "nice_to_have": [
+      "Offer letters, handbooks, and employment contracts",
+      "Pay stubs / time records",
+      "Emails, texts, or HR complaints documenting the issue",
+      "EEOC/DFEH/CRD charge filing confirmation if already filed"
+    ],
+    "auto_decline": [
+      "Claim is exclusively workers’ compensation with no dual-capacity exception",
+      "Administrative deadline missed and no equitable tolling argument",
+      "Client still employed and seeks only informal advice with no claim intent",
+      "Conflict of interest with employer client of the firm",
+      "Independent contractor with no viable misclassification or statutory claim"
+    ],
+    "intake_questions": [
+      "What is your job title and employment status (current/former)?",
+      "What adverse action or violation occurred, and on what dates?",
+      "Did you report the issue internally or to a government agency?",
+      "Are you seeking reinstatement, wages, damages, or something else?"
+    ]
+  },
+  "Immigration": {
+    "jurisdictions": ["CA", "NV", "TX", "FL", "NY"],
+    "must_have": [
+      "Clear immigration goal (visa, adjustment, asylum, removal defense, naturalization)",
+      "Client identity and current immigration status (or lack thereof)",
+      "Country of nationality and any prior USCIS/EOIR history known to client",
+      "No conflict with existing immigration clients in related proceedings"
+    ],
+    "nice_to_have": [
+      "Passport biographic page",
+      "I-94, visa stamps, approval notices",
+      "Prior filings, RFEs, NOIDs, NTAs",
+      "Family relationship evidence for petition-based cases"
+    ],
+    "auto_decline": [
+      "Matter requires only notario/document-prep services outside attorney practice",
+      "Client seeks advice on committing immigration fraud",
+      "Firm lacks capacity for imminent removal hearing (under 14 days) without coverage",
+      "Conflict of interest with petitioner/sponsor already represented by firm adverse to client"
+    ],
+    "intake_questions": [
+      "What immigration benefit or defense do you need?",
+      "What is your current status and when did you last enter the U.S.?",
+      "Have you ever been detained, removed, or received a Notice to Appear?",
+      "Do you have a sponsor, employer, or family petitioner involved?"
+    ]
+  },
+  "Family Law": {
+    "jurisdictions": ["CA", "NV", "AZ", "OR", "CO"],
+    "must_have": [
+      "Matter type identified (divorce, custody, support, DVRO, adoption, paternity)",
+      "Residency/jurisdiction basis in an active firm state",
+      "Names and relationships of all parties and minor children",
+      "No unwaived conflict with opposing party"
+    ],
+    "nice_to_have": [
+      "Existing court orders or prior case numbers",
+      "Marriage/divorce certificates",
+      "Income evidence for support analysis",
+      "Parenting-time calendar and school/medical info for children"
+    ],
+    "auto_decline": [
+      "Out-of-state custody matter with no UCCJEA home-state basis for our jurisdiction",
+      "Client seeks assistance violating a protective order",
+      "Conflict of interest with spouse/partner already retained",
+      "Matter is purely amicable DIY paperwork with no counsel role requested"
+    ],
+    "intake_questions": [
+      "What family-law issue do you need help with?",
+      "Where do you and the other party currently live?",
+      "Are there minor children, and where have they lived for the past 6 months?",
+      "Are there existing orders, restraining orders, or open cases?"
+    ]
+  },
+  "Criminal Defense": {
+    "jurisdictions": ["CA", "NV", "AZ", "TX"],
+    "must_have": [
+      "Pending charge, investigation, warrant, or post-conviction matter identified",
+      "Arrest/incident date and charging agency if known",
+      "Client is the accused (or authorized representative for a minor)",
+      "Court/jurisdiction where case is or will be heard"
+    ],
+    "nice_to_have": [
+      "Citation, complaint, or indictment",
+      "Bail/own-recognizance status",
+      "Next court date",
+      "Police report number and discovery already received"
+    ],
+    "auto_decline": [
+      "Client seeks advice on committing a future crime",
+      "Matter is outside active criminal jurisdictions and no pro hac vice plan",
+      "Conflict with co-defendant or victim already represented",
+      "Federal capital case outside firm capability"
+    ],
+    "intake_questions": [
+      "What are you charged with, or what are police investigating?",
+      "When is your next court date, and which courthouse?",
+      "Are you in custody, and what is your bail status?",
+      "Have you already spoken to police or prosecutors without counsel?"
+    ]
+  },
+  "Workers’ Compensation": {
+    "jurisdictions": ["CA", "NV", "AZ", "OR"],
+    "must_have": [
+      "Work-related injury or occupational illness",
+      "Employer identity and approximate date of injury / last injurious exposure",
+      "Claim within jurisdictional filing windows or ongoing benefits dispute",
+      "Employee (or dependent) claimant status"
+    ],
+    "nice_to_have": [
+      "Employer incident report",
+      "DWCs / state claim forms already filed",
+      "Medical reports and work status notes",
+      "Wage stubs for AWW/TD calculation"
+    ],
+    "auto_decline": [
+      "Injury clearly not work-related and no occupational exposure theory",
+      "Claim filing deadline expired with no exception",
+      "Client is employer seeking defense counsel (plaintiff-side WC firm only)",
+      "Conflict with employer or carrier already represented"
+    ],
+    "intake_questions": [
+      "When and how were you hurt at work?",
+      "Did you report the injury to your employer, and when?",
+      "Are you receiving medical care or disability benefits now?",
+      "Has the claim been denied, delayed, or underpaid?"
+    ]
+  },
+  "Medical Malpractice": {
+    "jurisdictions": ["CA", "NV", "AZ", "TX", "FL"],
+    "must_have": [
+      "Identifiable healthcare provider or facility",
+      "Alleged deviation from standard of care with resulting injury",
+      "Treatment dates within SOL / repose rules for the jurisdiction",
+      "Signed medical authorization willingness for records review"
+    ],
+    "nice_to_have": [
+      "Medical records and imaging",
+      "Names of treating and subsequent providers",
+      "Prior expert opinion if any",
+      "Itemized medical bills and disability documentation"
+    ],
+    "auto_decline": [
+      "Bad outcome alone with no arguable negligence (known complication without breach)",
+      "SOL or statute of repose expired",
+      "Damages limited to dissatisfaction without compensable harm",
+      "Conflict with hospital/system that is a firm client",
+      "Estimated case value below firm med-mal minimum ($50,000) after cost analysis"
+    ],
+    "intake_questions": [
+      "Which provider or facility do you believe committed malpractice?",
+      "What treatment occurred, and what went wrong?",
+      "What injuries or additional treatment resulted?",
+      "When did you first suspect something was done incorrectly?"
+    ]
+  },
+  "Product Liability": {
+    "jurisdictions": ["CA", "NV", "TX", "FL", "IL"],
+    "must_have": [
+      "Identifiable product (brand/model if possible)",
+      "Injury or property damage caused by product defect, failure to warn, or breach of warranty",
+      "Product preserved or documented when feasible",
+      "Claim within SOL for the jurisdiction"
+    ],
+    "nice_to_have": [
+      "Product photos, serial numbers, packaging, manuals",
+      "Purchase receipts",
+      "Recall notices",
+      "Incident/medical reports linking product use to injury"
+    ],
+    "auto_decline": [
+      "Product discarded with no photos/identifiers and no other proof of defect",
+      "Injury from intentional misuse with no defective condition theory",
+      "SOL expired",
+      "Conflict with manufacturer already represented by firm",
+      "Estimated recoverable damages below firm minimum ($10,000)"
+    ],
+    "intake_questions": [
+      "What product caused the injury, and how was it being used?",
+      "Do you still have the product, packaging, or purchase proof?",
+      "What injuries resulted and what treatment did you receive?",
+      "Was there a recall or prior complaint about this product?"
+    ]
+  },
+  "Civil Rights": {
+    "jurisdictions": ["CA", "NV", "NY", "IL", "GA"],
+    "must_have": [
+      "State actor or covered entity under federal/state civil-rights statutes",
+      "Specific rights violation theory (e.g., excessive force, unlawful search, discrimination, First Amendment retaliation)",
+      "Incident within SOL (often 2 years for §1983; state analogs vary)",
+      "Identifiable defendants or agency"
+    ],
+    "nice_to_have": [
+      "Bodycam / dashcam references or public records requests filed",
+      "Medical records for force injuries",
+      "Witnesses and photos/video",
+      "Internal affairs or complaint filings"
+    ],
+    "auto_decline": [
+      "Purely private dispute with no state action and no statutory coverage",
+      "SOL expired",
+      "Client seeks only criminal prosecution of officers (no civil claim)",
+      "Conflict with municipality/agency already represented"
+    ],
+    "intake_questions": [
+      "Which agency or officials were involved, and what did they do?",
+      "When and where did the incident occur?",
+      "Were you arrested, injured, or had property seized?",
+      "Have you filed an administrative claim against the public entity (if required)?"
+    ]
+  },
+  "Consumer Protection": {
+    "jurisdictions": ["CA", "NV", "TX", "FL", "NY"],
+    "must_have": [
+      "Consumer transaction or deceptive business practice involving the client",
+      "Specific statutory or common-law theory (UDAP/UCL, FCRA, FDCPA, lemon law, fraud)",
+      "Conduct within SOL",
+      "Identifiable business defendant"
+    ],
+    "nice_to_have": [
+      "Contracts, ads, invoices, collection letters",
+      "Credit reports and dispute history",
+      "Recordings or written communications with the business",
+      "Proof of payments and damages"
+    ],
+    "auto_decline": [
+      "Business-vs-business commercial dispute outside consumer statutes",
+      "Damages below small-claims / firm referral threshold with no class or fee-shift path",
+      "SOL expired",
+      "Conflict with defendant business that is a firm client"
+    ],
+    "intake_questions": [
+      "What product, service, or debt collection practice caused the problem?",
+      "What false statements, hidden fees, or unlawful collection acts occurred?",
+      "How much money did you lose or what credit harm did you suffer?",
+      "Have you already disputed the issue with the company or a regulator?"
+    ]
+  }
+}

@@ -1,0 +1,242 @@
+{
+  "Personal Injury": [
+    {
+      "id": "cli-pi-001",
+      "name": "Elena Vasquez",
+      "email": "elena.vasquez@example.com",
+      "phone": "+1-555-2101",
+      "jurisdiction": "NV",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Rear-ended on I-15; neck and back injuries in treatment"
+    },
+    {
+      "id": "cli-pi-002",
+      "name": "Marcus Allen",
+      "email": "marcus.allen@example.com",
+      "phone": "+1-555-2102",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "referral",
+      "status": "intake_review",
+      "matter_summary": "Slip-and-fall at grocery store; ankle fracture"
+    }
+  ],
+  "Employment Law": [
+    {
+      "id": "cli-emp-001",
+      "name": "Priya Shah",
+      "email": "priya.shah@example.com",
+      "phone": "+1-555-2201",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Terminated after requesting pregnancy accommodation"
+    },
+    {
+      "id": "cli-emp-002",
+      "name": "Devon Clark",
+      "email": "devon.clark@example.com",
+      "phone": "+1-555-2202",
+      "jurisdiction": "NY",
+      "preferred_language": "en",
+      "source": "hotline",
+      "status": "intake_review",
+      "matter_summary": "Misclassified as exempt; unpaid overtime claim"
+    }
+  ],
+  "Immigration": [
+    {
+      "id": "cli-imm-001",
+      "name": "Amira Haddad",
+      "email": "amira.haddad@example.com",
+      "phone": "+1-555-2301",
+      "jurisdiction": "CA",
+      "preferred_language": "ar",
+      "source": "nonprofit_referral",
+      "status": "active",
+      "matter_summary": "Affirmative asylum based on political persecution"
+    },
+    {
+      "id": "cli-imm-002",
+      "name": "Luis Ferreira",
+      "email": "luis.ferreira@example.com",
+      "phone": "+1-555-2302",
+      "jurisdiction": "TX",
+      "preferred_language": "pt",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "I-751 waiver after divorce from abusive spouse"
+    }
+  ],
+  "Family Law": [
+    {
+      "id": "cli-fam-001",
+      "name": "Hannah Ortiz",
+      "email": "hannah.ortiz@example.com",
+      "phone": "+1-555-2401",
+      "jurisdiction": "AZ",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Opposing relocation and seeking custody modification"
+    },
+    {
+      "id": "cli-fam-002",
+      "name": "Benjamin Crowe",
+      "email": "benjamin.crowe@example.com",
+      "phone": "+1-555-2402",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "referral",
+      "status": "closed",
+      "matter_summary": "Dissolution with closely held business valuation"
+    }
+  ],
+  "Criminal Defense": [
+    {
+      "id": "cli-crim-001",
+      "name": "Noah Briggs",
+      "email": "noah.briggs@example.com",
+      "phone": "+1-555-2501",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "after_hours_call",
+      "status": "active",
+      "matter_summary": "Felony assault charge; self-defense investigation"
+    },
+    {
+      "id": "cli-crim-002",
+      "name": "Olivia Grant",
+      "email": "olivia.grant@example.com",
+      "phone": "+1-555-2502",
+      "jurisdiction": "NV",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "closed",
+      "matter_summary": "First-offense DUI; resolved as wet reckless"
+    }
+  ],
+  "Workers’ Compensation": [
+    {
+      "id": "cli-wc-001",
+      "name": "Hector Ramirez",
+      "email": "hector.ramirez@example.com",
+      "phone": "+1-555-2601",
+      "jurisdiction": "CA",
+      "preferred_language": "es",
+      "source": "union_referral",
+      "status": "active",
+      "matter_summary": "Warehouse ladder fall; shoulder surgery and PD dispute"
+    },
+    {
+      "id": "cli-wc-002",
+      "name": "Keisha Walton",
+      "email": "keisha.walton@example.com",
+      "phone": "+1-555-2602",
+      "jurisdiction": "NV",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Occupational asthma claim denied then litigated"
+    }
+  ],
+  "Medical Malpractice": [
+    {
+      "id": "cli-mm-001",
+      "name": "Sophia Bennett",
+      "email": "sophia.bennett@example.com",
+      "phone": "+1-555-2701",
+      "jurisdiction": "FL",
+      "preferred_language": "en",
+      "source": "referral",
+      "status": "intake_review",
+      "matter_summary": "Delayed appendicitis diagnosis resulting in sepsis"
+    },
+    {
+      "id": "cli-mm-002",
+      "name": "William Cho",
+      "email": "william.cho@example.com",
+      "phone": "+1-555-2702",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Wrong-level lumbar surgery with foot drop"
+    }
+  ],
+  "Product Liability": [
+    {
+      "id": "cli-pl-001",
+      "name": "Aiden Scott",
+      "email": "aiden.scott@example.com",
+      "phone": "+1-555-2801",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "E-bike battery fire causing burn injuries"
+    },
+    {
+      "id": "cli-pl-002",
+      "name": "Maya Thompson",
+      "email": "maya.thompson@example.com",
+      "phone": "+1-555-2802",
+      "jurisdiction": "IL",
+      "preferred_language": "en",
+      "source": "referral",
+      "status": "closed",
+      "matter_summary": "Dresser tip-over injury to toddler"
+    }
+  ],
+  "Civil Rights": [
+    {
+      "id": "cli-cr-001",
+      "name": "Andre Mitchell",
+      "email": "andre.mitchell@example.com",
+      "phone": "+1-555-2901",
+      "jurisdiction": "IL",
+      "preferred_language": "en",
+      "source": "civil_rights_hotline",
+      "status": "active",
+      "matter_summary": "Excessive force during traffic stop; orbital fracture"
+    },
+    {
+      "id": "cli-cr-002",
+      "name": "Lena Park",
+      "email": "lena.park@example.com",
+      "phone": "+1-555-2902",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "closed",
+      "matter_summary": "First Amendment retaliation via selective code enforcement"
+    }
+  ],
+  "Consumer Protection": [
+    {
+      "id": "cli-cp-001",
+      "name": "Ryan Delgado",
+      "email": "ryan.delgado@example.com",
+      "phone": "+1-555-3001",
+      "jurisdiction": "CA",
+      "preferred_language": "en",
+      "source": "web_intake",
+      "status": "active",
+      "matter_summary": "Yo-yo car financing and undisclosed add-on products"
+    },
+    {
+      "id": "cli-cp-002",
+      "name": "Natalie Russo",
+      "email": "natalie.russo@example.com",
+      "phone": "+1-555-3002",
+      "jurisdiction": "NY",
+      "preferred_language": "en",
+      "source": "referral",
+      "status": "closed",
+      "matter_summary": "Debt collector contacted employer after cease-and-desist"
+    }
+  ]
+}

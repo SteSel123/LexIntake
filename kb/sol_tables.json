@@ -1,0 +1,73 @@
+{
+  "Personal Injury": {
+    "CA": "2 years from injury (CCP §335.1). Discovery rule may apply in latent injury cases.",
+    "NV": "2 years from injury (NRS 11.190). Shorter periods may apply to claims against public entities.",
+    "AZ": "2 years from accrual (A.R.S. §12-542).",
+    "TX": "2 years from accrual (Civ. Prac. & Rem. Code §16.003).",
+    "FL": "2 years from accrual for negligence actions filed on/after Mar 24, 2023 (prior law often 4 years; confirm filing date rules).",
+    "NY": "3 years from accrual (CPLR 214).",
+    "IL": "2 years from accrual (735 ILCS 5/13-202)."
+  },
+  "Employment Law": {
+    "CA": "FEHA: generally file with CRD within 3 years of unlawful practice (post-2020). Common-law wrongful termination often 2 years. Wage claims: DLSE/Labor Code deadlines vary (often 1–3 years by claim type).",
+    "NV": "NDEP/NEOC dual-filing often within 300 days. State tort/contract claims commonly 2–4 years depending on theory.",
+    "NY": "NYSDHR generally 1 year (3 years for sexual harassment). NYCHRL often 3 years. Federal EEOC typically 300 days in deferral states.",
+    "WA": "WLAD administrative filing generally 6 months to WSHRC for some routes; civil actions often 3 years. Confirm claim path.",
+    "IL": "IHRA generally 300 days to IDHR. Retaliatory discharge and other torts often 2 years.",
+    "TX": "TWC/CRD and EEOC dual-filing typically 180–300 days. Sabine Pilot / common-law claims often 2 years."
+  },
+  "Immigration": {
+    "CA": "No single SOL; driven by USCIS/EOIR deadlines, NTA charging documents, appeal windows (BIA often 30 days), and motion deadlines. State tort claims related to immigration vendors follow state personal-injury/fraud SOLs.",
+    "NV": "Same federal immigration deadlines as all states; state-law malpractice/fraud claims generally 2–3 years.",
+    "TX": "Federal immigration deadlines control benefits and removal; related state claims follow Texas 2–4 year statutes by theory.",
+    "FL": "Federal immigration deadlines control; related state claims often 4 years for written contracts / 2–4 for torts depending on theory.",
+    "NY": "Federal immigration deadlines control; state professional malpractice often 3 years."
+  },
+  "Family Law": {
+    "CA": "No SOL to file dissolution. Enforcement of support judgments has long lookbacks; contempt and modification require current jurisdiction. Domestic violence RO filings are incident-driven; civil DV damages often 2–3 years.",
+    "NV": "No SOL for divorce filing if residency met (generally 6 weeks). Custody governed by UCCJEA. Support enforcement subject to judgment rules.",
+    "AZ": "No SOL for divorce if residency met (generally 90 days). Spousal maintenance/arrears enforcement subject to judgment statutes.",
+    "OR": "No SOL for dissolution if residency met. Child support judgments enforceable for extended periods under ORS.",
+    "CO": "No SOL for dissolution if residency met (generally 91 days). Parental responsibilities under UCCJEA."
+  },
+  "Criminal Defense": {
+    "CA": "Prosecution filing deadlines (not defense SOL): misdemeanors generally 1 year; many felonies 3 years; serious/violent/sex offenses longer or none. Defense post-conviction deadlines (appeals ~60 days) are strict.",
+    "NV": "Prosecution limits vary by offense class (e.g., misdemeanors often 1–2 years; felonies longer). Appeal deadlines from judgment are short (often 30 days).",
+    "AZ": "Prosecution time limits per A.R.S. Title 13; appeals from superior court typically 30 days.",
+    "TX": "Prosecution limitations in Code of Criminal Procedure Chapter 12; notice of appeal often 30 days from sentence."
+  },
+  "Workers’ Compensation": {
+    "CA": "Generally file DWC-1 / application within 1 year of injury or last furnishing of benefits (Labor Code §5405). Death claims have separate windows. Occupational disease: 1 year from date worker knew or should have known.",
+    "NV": "Written notice often within 7 days of injury; claim filing generally within 90 days of injury (NRS 616C), with limited exceptions. Confirm current Division rules.",
+    "AZ": "Report to employer ASAP; claim filing generally within 1 year of injury (A.R.S. §23-1061).",
+    "OR": "Report promptly; claim filing generally within 90 days of injury / 1 year outside that with limited exceptions (ORS 656.265)."
+  },
+  "Medical Malpractice": {
+    "CA": "1 year from discovery and 3 years from injury (CCP §340.5), subject to MICRA and tolling rules (foreign body, fraud, minority).",
+    "NV": "1 year from discovery / 3 years from injury for many professional negligence claims (NRS 41A.097), with exceptions.",
+    "AZ": "2 years from injury with discovery/tolling nuances (A.R.S. §12-542); check statute of repose issues for older treatment.",
+    "TX": "Generally 2 years from the breach/treatment with a 10-year repose in many cases (Civ. Prac. & Rem. Code Ch. 74).",
+    "FL": "2 years from discovery / 4-year repose (longer for fraud/concealment/children in limited cases) under §95.11."
+  },
+  "Product Liability": {
+    "CA": "Personal injury from defective product: generally 2 years (CCP §335.1). Warranty claims shorter/longer by UCC theory. Statute of repose uncommon vs. some states.",
+    "NV": "Personal injury generally 2 years; product claims may also implicate UCC 4-year warranty periods.",
+    "TX": "Personal injury generally 2 years; products cases may involve 15-year statute of repose for manufacturing equipment in some contexts—verify product type.",
+    "FL": "Product defect causing injury generally 2 years under current negligence reforms; repose rules may apply for older products—verify.",
+    "IL": "Personal injury generally 2 years; products statute of repose often 10–12 years from sale/manufacture depending on theory."
+  },
+  "Civil Rights": {
+    "CA": "§1983 claims borrow state personal-injury SOL (generally 2 years). California Tort Claims Act: presentment often within 6 months for state/local entities before suit. Bane Act and related claims often 2–3 years.",
+    "NV": "§1983 generally 2 years. State notices of claim against public agencies may be much shorter—calendar carefully.",
+    "NY": "§1983 generally 3 years. Notices of claim against municipalities often 90 days (General Municipal Law).",
+    "IL": "§1983 generally 2 years. Local governmental notice rules may apply to pendant state claims.",
+    "GA": "§1983 generally 2 years. Ante litem notices for claims against municipalities/counties often 6–12 months."
+  },
+  "Consumer Protection": {
+    "CA": "UCL (Bus. & Prof. Code §17200) generally 4 years. CLRA often 3 years. FCRA typically 2 years from discovery / 5-year repose. FDCPA generally 1 year from violation.",
+    "NV": "Deceptive trade practices often 4 years (NRS 11.220 / DTPA provisions). FDCPA 1 year; FCRA 2/5 years.",
+    "TX": "DTPA generally 2 years from discovery (max 3 from act). FDCPA 1 year; FCRA 2/5 years. Lemon law administrative windows are shorter.",
+    "FL": "FDUTPA generally 4 years. FDCPA 1 year; FCRA 2/5 years. Motor vehicle lemon law notice/filing windows are short.",
+    "NY": "GBL §349 generally 3 years. FDCPA 1 year; FCRA 2/5 years."
+  }
+}

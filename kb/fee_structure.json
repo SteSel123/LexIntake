@@ -1,0 +1,170 @@
+{
+  "Personal Injury": {
+    "billing_model": "contingency",
+    "contingency_pre_litigation_percent": 33.33,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": 45.0,
+    "hourly_rate_usd": null,
+    "retainer_usd": 0,
+    "costs_advanced_by_firm": true,
+    "cost_examples_usd": {
+      "medical_records": 150,
+      "filing_fees": 435,
+      "deposition": 1200
+    },
+    "notes": "No fee unless recovery. Costs reimbursed from settlement per engagement agreement. Percentages may be reduced by statute in some jurisdictions for minors."
+  },
+  "Employment Law": {
+    "billing_model": "hybrid",
+    "contingency_pre_litigation_percent": 35.0,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": 45.0,
+    "hourly_rate_usd": 425,
+    "retainer_usd": 5000,
+    "costs_advanced_by_firm": false,
+    "cost_examples_usd": {
+      "administrative_filing": 0,
+      "deposition": 1500,
+      "expert_economist": 5000
+    },
+    "notes": "Discrimination/retaliation often contingency or hybrid. Wage-and-hour and contract disputes frequently hourly against retainer. Fee-shifting statutes may apply (e.g., FEHA, Title VII)."
+  },
+  "Immigration": {
+    "billing_model": "flat_or_hourly",
+    "contingency_pre_litigation_percent": null,
+    "contingency_litigation_percent": null,
+    "contingency_appeal_percent": null,
+    "hourly_rate_usd": 375,
+    "retainer_usd": 3000,
+    "flat_fees_usd": {
+      "naturalization": 2500,
+      "family_petition_adjustment": 4500,
+      "employment_h1b": 3500,
+      "removal_defense_start": 6000,
+      "asylum_affirmative": 5000
+    },
+    "costs_advanced_by_firm": false,
+    "cost_examples_usd": {
+      "uscis_filing_fees": 1440,
+      "biometrics": 85,
+      "translation": 200
+    },
+    "notes": "Government filing fees separate. Complex removal/asylum matters often hybrid flat + hourly for hearings."
+  },
+  "Family Law": {
+    "billing_model": "hourly",
+    "contingency_pre_litigation_percent": null,
+    "contingency_litigation_percent": null,
+    "contingency_appeal_percent": null,
+    "hourly_rate_usd": 400,
+    "associate_hourly_rate_usd": 275,
+    "paralegal_hourly_rate_usd": 150,
+    "retainer_usd": 3500,
+    "costs_advanced_by_firm": false,
+    "cost_examples_usd": {
+      "filing_fees": 435,
+      "service_of_process": 75,
+      "custody_evaluation": 4000
+    },
+    "notes": "Contingency fees generally prohibited for divorce. Evergreen retainer replenished monthly. Unbundled limited-scope available for document review."
+  },
+  "Criminal Defense": {
+    "billing_model": "flat_or_hourly",
+    "contingency_pre_litigation_percent": null,
+    "contingency_litigation_percent": null,
+    "contingency_appeal_percent": null,
+    "hourly_rate_usd": 450,
+    "retainer_usd": 5000,
+    "flat_fees_usd": {
+      "misdemeanor_pretrial": 3500,
+      "dui_first_offense": 4000,
+      "felony_pretrial": 10000,
+      "preliminary_hearing_add_on": 3500,
+      "trial_day_rate": 2500
+    },
+    "costs_advanced_by_firm": false,
+    "cost_examples_usd": {
+      "investigator": 1500,
+      "expert_witness": 3000,
+      "transcripts": 400
+    },
+    "notes": "Contingency fees prohibited in criminal matters. Flat fees common through plea; trial billed separately."
+  },
+  "Workers’ Compensation": {
+    "billing_model": "contingency_statutory",
+    "contingency_pre_litigation_percent": 15.0,
+    "contingency_litigation_percent": 15.0,
+    "contingency_appeal_percent": 15.0,
+    "hourly_rate_usd": null,
+    "retainer_usd": 0,
+    "costs_advanced_by_firm": true,
+    "cost_examples_usd": {
+      "medical_records": 100,
+      "deposition": 800
+    },
+    "notes": "Attorney fees typically board/judge-approved and often capped by statute (commonly ~9–15% depending on jurisdiction and benefit type). No upfront fee for injured workers in most states."
+  },
+  "Medical Malpractice": {
+    "billing_model": "contingency",
+    "contingency_pre_litigation_percent": 33.33,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": 45.0,
+    "hourly_rate_usd": null,
+    "retainer_usd": 0,
+    "costs_advanced_by_firm": true,
+    "cost_examples_usd": {
+      "medical_expert_review": 2500,
+      "multiple_specialty_experts": 15000,
+      "filing_fees": 435
+    },
+    "notes": "High case costs. Some states cap contingency percentages or noneconomic damages (e.g., CA MICRA). Firm advances reasonable costs, repaid from recovery."
+  },
+  "Product Liability": {
+    "billing_model": "contingency",
+    "contingency_pre_litigation_percent": 33.33,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": 45.0,
+    "hourly_rate_usd": null,
+    "retainer_usd": 0,
+    "costs_advanced_by_firm": true,
+    "cost_examples_usd": {
+      "product_testing": 5000,
+      "engineering_expert": 8000,
+      "filing_fees": 435
+    },
+    "notes": "Mass-tort MDLs may use alternative common-benefit fee structures. Individual cases follow standard contingency."
+  },
+  "Civil Rights": {
+    "billing_model": "hybrid",
+    "contingency_pre_litigation_percent": 33.33,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": 45.0,
+    "hourly_rate_usd": 475,
+    "retainer_usd": 2500,
+    "costs_advanced_by_firm": true,
+    "cost_examples_usd": {
+      "government_claim_filing": 0,
+      "deposition": 1400,
+      "expert_use_of_force": 6000
+    },
+    "notes": "Often contingency with fee-shifting under §1988 if plaintiff prevails. Small retainers sometimes used for early investigation and Tort Claims Act filings."
+  },
+  "Consumer Protection": {
+    "billing_model": "hybrid",
+    "contingency_pre_litigation_percent": 33.33,
+    "contingency_litigation_percent": 40.0,
+    "contingency_appeal_percent": null,
+    "hourly_rate_usd": 350,
+    "retainer_usd": 1500,
+    "flat_fees_usd": {
+      "demand_letter_package": 750,
+      "fdcpa_individual": 0
+    },
+    "costs_advanced_by_firm": false,
+    "cost_examples_usd": {
+      "filing_fees": 400,
+      "process_server": 85
+    },
+    "notes": "FDCPA/FCRA and many UDAP statutes are fee-shifting; individual consumer cases may be taken with little or no retainer when statutory fees are available."
+  }
+}

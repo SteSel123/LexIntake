@@ -1,0 +1,162 @@
+{
+  "Personal Injury": [
+    {
+      "name": "Jordan Hale",
+      "experience_years": 14,
+      "specialization": "Catastrophic injury and auto/truck collisions",
+      "jurisdictions": ["CA", "NV"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Riley Quinn",
+      "experience_years": 9,
+      "specialization": "Premises liability and soft-tissue/surgery cases",
+      "jurisdictions": ["AZ", "NV", "CA"],
+      "availability": "limited"
+    }
+  ],
+  "Employment Law": [
+    {
+      "name": "Sam Rivera",
+      "experience_years": 12,
+      "specialization": "Discrimination, retaliation, and whistleblower claims",
+      "jurisdictions": ["CA", "NV"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Avery Brooks",
+      "experience_years": 8,
+      "specialization": "Wage-and-hour and misclassification",
+      "jurisdictions": ["NY", "CA", "IL"],
+      "availability": "accepting_new_clients"
+    }
+  ],
+  "Immigration": [
+    {
+      "name": "Morgan Patel",
+      "experience_years": 11,
+      "specialization": "Removal defense and asylum",
+      "jurisdictions": ["CA", "NV", "TX"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Chris Okonkwo",
+      "experience_years": 7,
+      "specialization": "Family-based petitions and naturalization",
+      "jurisdictions": ["FL", "NY", "TX"],
+      "availability": "limited"
+    }
+  ],
+  "Family Law": [
+    {
+      "name": "Alex Chen",
+      "experience_years": 16,
+      "specialization": "Custody, relocation, and high-conflict parenting cases",
+      "jurisdictions": ["CA", "NV", "AZ"],
+      "availability": "waitlist"
+    },
+    {
+      "name": "Taylor Nguyen",
+      "experience_years": 10,
+      "specialization": "Divorce, support, and property division",
+      "jurisdictions": ["OR", "CA", "CO"],
+      "availability": "accepting_new_clients"
+    }
+  ],
+  "Criminal Defense": [
+    {
+      "name": "Casey Morales",
+      "experience_years": 15,
+      "specialization": "Felony trial defense and preliminary hearings",
+      "jurisdictions": ["CA", "NV"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Jamie Foster",
+      "experience_years": 6,
+      "specialization": "DUI and misdemeanor defense",
+      "jurisdictions": ["AZ", "NV", "TX"],
+      "availability": "accepting_new_clients"
+    }
+  ],
+  "Workers’ Compensation": [
+    {
+      "name": "Robin Estrada",
+      "experience_years": 13,
+      "specialization": "AOE/COE disputes and permanent disability",
+      "jurisdictions": ["CA", "NV"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Dana Kim",
+      "experience_years": 8,
+      "specialization": "Occupational disease and denied treatment",
+      "jurisdictions": ["AZ", "OR", "CA"],
+      "availability": "limited"
+    }
+  ],
+  "Medical Malpractice": [
+    {
+      "name": "Jordan Blake",
+      "experience_years": 18,
+      "specialization": "Surgical errors and delayed diagnosis",
+      "jurisdictions": ["CA", "NV", "AZ"],
+      "availability": "selective"
+    },
+    {
+      "name": "Harper Singh",
+      "experience_years": 11,
+      "specialization": "Birth injury and emergency medicine cases",
+      "jurisdictions": ["FL", "TX", "CA"],
+      "availability": "accepting_new_clients"
+    }
+  ],
+  "Product Liability": [
+    {
+      "name": "Reese Alvarez",
+      "experience_years": 12,
+      "specialization": "Consumer electronics and battery fires",
+      "jurisdictions": ["CA", "NV", "TX"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Parker Dunn",
+      "experience_years": 9,
+      "specialization": "Auto parts defects and tip-over / children’s products",
+      "jurisdictions": ["IL", "FL", "CA"],
+      "availability": "limited"
+    }
+  ],
+  "Civil Rights": [
+    {
+      "name": "Cameron Wright",
+      "experience_years": 14,
+      "specialization": "Police misconduct and excessive force",
+      "jurisdictions": ["CA", "IL", "NY"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Sidney Ross",
+      "experience_years": 10,
+      "specialization": "First Amendment and public-entity claims",
+      "jurisdictions": ["GA", "NV", "CA"],
+      "availability": "limited"
+    }
+  ],
+  "Consumer Protection": [
+    {
+      "name": "Quinn Bailey",
+      "experience_years": 9,
+      "specialization": "Auto fraud, CLRA/UCL, and lemon law",
+      "jurisdictions": ["CA", "NV", "TX"],
+      "availability": "accepting_new_clients"
+    },
+    {
+      "name": "Drew Fontaine",
+      "experience_years": 7,
+      "specialization": "FDCPA/FCRA and debt-collection abuse",
+      "jurisdictions": ["NY", "FL", "CA"],
+      "availability": "accepting_new_clients"
+    }
+  ]
+}
