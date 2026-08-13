@@ -6,3 +6,19 @@ __pycache__/
 venv/
 .env
 .DS_Store
+
+# LanceDB local data directory
+db/lancedb/
+*.lance
+
+# SQLite structured database file
+db/lexintake.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# Monitoring logs
+monitoring/logs/
+
+# Evaluation logs
+evaluation/logs/
