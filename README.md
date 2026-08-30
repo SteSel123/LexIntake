@@ -100,7 +100,9 @@ Every user-facing response includes:
 CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs offline hash embeddings + demo + eval `--limit 5` on PRs to `main`.
 
 See [docs/DESIGN_REPORT.md](docs/DESIGN_REPORT.md) and [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md).  
-Demo recording script: [docs/DEMO.md](docs/DEMO.md).
+Demo recording script: [docs/DEMO.md](docs/DEMO.md).  
+Full Dutch learning PDF (40+ pages): [docs/LexIntake_Leerboek.pdf](docs/LexIntake_Leerboek.pdf)  
+(regenerate with `python docs/generate_leerboek_pdf.py`).
 
 ## License
 

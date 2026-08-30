@@ -207,22 +207,31 @@ class IntakeAgent(Agent):
         except Exception:  # noqa: BLE001
             pass
 
-        super().__init__(
-            name="LexIntake Intake Agent",
-            model=llm,
-            tools=[
+        # Pass only kwargs supported by the installed Agno Agent version.
+        import inspect
+
+        from agno.agent import Agent as _AgnoAgent
+
+        agent_kwargs: dict = {
+            "name": "LexIntake Intake Agent",
+            "model": llm,
+            "tools": [
                 check_statute_of_limitations,
                 conflict_check,
                 estimate_case_value,
                 route_lead,
                 web_search_fallback,
             ],
-            instructions=INTAKE_INSTRUCTIONS,
-            reasoning=True,
-            tool_choice="auto",
-            markdown=True,
+            "instructions": INTAKE_INSTRUCTIONS,
+            "markdown": True,
             **kwargs,
-        )
+        }
+        supported = inspect.signature(_AgnoAgent.__init__).parameters
+        if "reasoning" in supported:
+            agent_kwargs["reasoning"] = True
+        if "tool_choice" in supported:
+            agent_kwargs["tool_choice"] = "auto"
+        super().__init__(**agent_kwargs)
 
     @property
     def llm_ready(self) -> bool:
