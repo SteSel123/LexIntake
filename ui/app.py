@@ -81,6 +81,31 @@ div[data-testid="stMetric"] {
   border: 1px solid var(--line);
   padding: 0.75rem;
 }
+
+/* Chat / markdown: force readable dark ink on light theme */
+[data-testid="stChatMessage"],
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessage"] li,
+[data-testid="stChatMessage"] span,
+[data-testid="stChatMessage"] .stMarkdown,
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"] p,
+.stMarkdown, .stMarkdown p {
+  color: var(--ink) !important;
+}
+[data-testid="stChatMessage"] {
+  background: var(--panel) !important;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+[data-testid="stCaption"],
+.stCaption, small {
+  color: var(--muted) !important;
+}
+h1, h2, h3, h4, .stHeading, [data-testid="stHeading"] {
+  color: var(--ink) !important;
+}
 """
 
 EXAMPLES = {
