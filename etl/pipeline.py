@@ -17,8 +17,6 @@ from etl.transform import deduplicate_all
 from etl.transform import embed_chunks
 from etl.transform import attach_metadata_all
 
-if __name__ == "__main__":
-    run_pipeline()
 
 def run_pipeline(
     db_path: Path | None = None,
@@ -106,3 +104,7 @@ def load(
         dimensions=dimensions,
         recreate_on_dim_mismatch=recreate_on_dim_mismatch,
     )
+
+
+if __name__ == "__main__":
+    run_pipeline()
