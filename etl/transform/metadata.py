@@ -59,10 +59,10 @@ def attach_metadata_all(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    from chunk import chunk_all
-    from clean import clean_all
-    from deduplicate import deduplicate_all
-    from extract import extract_all
+    from etl.extract.documents import extract_all
+    from etl.transform.chunk import chunk_all
+    from etl.transform.clean import clean_all
+    from etl.transform.deduplicate import deduplicate_all
 
     enriched = attach_metadata_all(chunk_all(deduplicate_all(clean_all(extract_all()))))
     print(f"Enriched {len(enriched)} chunks")

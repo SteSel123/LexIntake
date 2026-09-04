@@ -19,8 +19,9 @@ for path in (
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from agents.fact_parse import parse_case_description  # noqa: E402
-from agents.intake_agent import IntakeAgent, IntakeFacts, IntakeResponse  # noqa: E402
+from agents.intake.agent import IntakeAgent  # noqa: E402
+from agents.intake.models import IntakeFacts, IntakeResponse  # noqa: E402
+from agents.intake.fact_parse import parse_case_description  # noqa: E402
 from scoring.lead_scoring import score_lead  # noqa: E402
 
 LEGAL_DISCLAIMER = "This is not legal advice. Consult a licensed attorney."

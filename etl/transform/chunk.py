@@ -102,9 +102,9 @@ def chunk_all(
 
 
 if __name__ == "__main__":
-    from clean import clean_all
-    from deduplicate import deduplicate_all
-    from extract import extract_all
+    from etl.extract.documents import extract_all
+    from etl.transform.clean import clean_all
+    from etl.transform.deduplicate import deduplicate_all
 
     chunks = chunk_all(deduplicate_all(clean_all(extract_all())))
     print(f"Created {len(chunks)} chunks")

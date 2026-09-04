@@ -125,7 +125,7 @@ EXAMPLES = {
 
 
 def _ensure_interview():
-    from agents.interview import InterviewSession
+    from agents.interview.agent import InterviewSession
 
     if "interview" not in st.session_state:
         session = InterviewSession()

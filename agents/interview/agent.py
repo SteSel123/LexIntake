@@ -4,26 +4,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-try:
-    from agents.intake_agent import (
-        LEGAL_DISCLAIMER,
-        IntakeAgent,
-        IntakeFacts,
-        IntakeResponse,
-        UNCERTAINTY_ESCALATION,
-    )
-except ImportError:  # pragma: no cover
-    from intake_agent import (  # type: ignore
-        LEGAL_DISCLAIMER,
-        IntakeAgent,
-        IntakeFacts,
-        IntakeResponse,
-        UNCERTAINTY_ESCALATION,
-    )
+from agents.intake.agent import IntakeAgent, build_default_agent
+from agents.intake.constants import LEGAL_DISCLAIMER, UNCERTAINTY_ESCALATION
+from agents.intake.models import IntakeFacts, IntakeResponse
+from agents.prompts import load_prompts
 
 InterviewPhase = Literal["greeting", "collecting", "screening", "done"]
 
@@ -36,17 +25,8 @@ REQUIRED_FIELDS = (
     "damages",
 )
 
-FIELD_PROMPTS = {
-    "name": "What is your full name?",
-    "practice_area": (
-        "What type of legal matter is this "
-        "(e.g., Personal Injury, Employment Law, Immigration)?"
-    ),
-    "jurisdiction": "In which US state did this occur (e.g., CA, NV, NY)?",
-    "incident_date": "What is the incident or event date (YYYY-MM-DD or 'X months ago')?",
-    "opposing_party": "Who is the opposing or potentially at-fault party?",
-    "damages": "What are your estimated damages or losses in USD (number)?",
-}
+PROMPTS = load_prompts(Path(__file__).with_name("prompts.xml"))
+FIELD_PROMPTS = PROMPTS.mapping("field_prompts")
 
 
 class ChatMessage(BaseModel):
@@ -75,7 +55,7 @@ class InterviewSession:
 
     def __post_init__(self) -> None:
         if self.agent is None:
-            self.agent = IntakeAgent()
+            self.agent = build_default_agent()
 
     def missing_fields(self) -> list[str]:
         values = self.facts.model_dump()
@@ -96,12 +76,10 @@ class InterviewSession:
 
     def start(self) -> InterviewTurnResult:
         self.phase = "collecting"
-        msg = (
-            "Welcome to LexIntake intake screening.\n\n"
-            "I will ask a few questions so we can check practice-area fit, deadlines, "
-            "conflicts, and routing. "
-            f"{LEGAL_DISCLAIMER}\n\n"
-            f"{FIELD_PROMPTS['practice_area']}"
+        msg = PROMPTS.text(
+            "welcome",
+            legal_disclaimer=LEGAL_DISCLAIMER,
+            first_question=FIELD_PROMPTS["practice_area"],
         )
         self.messages.append(ChatMessage(role="assistant", content=msg))
         return InterviewTurnResult(
@@ -114,7 +92,7 @@ class InterviewSession:
 
     def _merge_text_into_facts(self, text: str) -> None:
         """Heuristic extraction from free-text answers (works offline)."""
-        from fact_parse import parse_case_description
+        from agents.intake.fact_parse import parse_case_description
 
         # Prefer incremental field fills when answering a specific prompt.
         last_q = ""
@@ -138,7 +116,7 @@ class InterviewSession:
                 self.facts.incident_date = iso.group(1)
             else:
                 # Allow relative phrases; fact_parse will normalize when possible
-                from fact_parse import infer_incident_date
+                from agents.intake.fact_parse import infer_incident_date
 
                 inferred = infer_incident_date(cleaned)
                 self.facts.incident_date = inferred or cleaned[:32]
@@ -188,20 +166,16 @@ class InterviewSession:
 
     def _llm_extract_fields(self, text: str) -> None:
         assert self.agent is not None
-        prompt = f"""Extract intake fields from the user reply into JSON only.
-Keys: name, opposing_party, practice_area, jurisdiction, incident_date, damages (int|null), severity.
-Use null for unknown. Current facts: {self.facts.model_dump_json()}
-User reply: {text}
-"""
-        raw = self.agent._complete(prompt, system="Return JSON only. No legal advice.")
-        if not raw:
-            return
-        try:
-            import json
+        prompt = PROMPTS.user(
+            "extract_fields",
+            facts=self.facts.model_dump_json(),
+            text=text,
+        )
+        raw = self.agent._complete(prompt, system=PROMPTS.text("extract_system"))
+        from agents.llm import parse_json_object
 
-            match = re.search(r"\{.*\}", raw, flags=re.S)
-            data = json.loads(match.group(0) if match else raw)
-        except Exception:  # noqa: BLE001
+        data = parse_json_object(raw)
+        if not data:
             return
         for key in (
             "name",
@@ -225,13 +199,13 @@ User reply: {text}
     def _questions_message(self, missing: list[str]) -> str:
         asks = missing[: self.max_questions_per_turn]
         lines = [FIELD_PROMPTS[f] for f in asks if f in FIELD_PROMPTS]
-        preface = "Thanks — I still need a bit more information to screen this matter."
+        preface = PROMPTS.text("questions_preface")
         return preface + "\n\n" + "\n".join(f"- {q}" for q in lines)
 
     def respond(self, user_text: str) -> InterviewTurnResult:
         text = (user_text or "").strip()
         if not text:
-            msg = "Please share a short description or answer the last question."
+            msg = PROMPTS.text("empty_reply")
             self.messages.append(ChatMessage(role="assistant", content=msg))
             return InterviewTurnResult(
                 phase=self.phase,
@@ -277,10 +251,7 @@ User reply: {text}
         summary = screening.message
         if screening.escalate and UNCERTAINTY_ESCALATION not in summary:
             summary = f"{summary}\n\n{UNCERTAINTY_ESCALATION}"
-        closing = (
-            "Intake interview complete. Here is the screening summary:\n\n"
-            f"{summary}"
-        )
+        closing = PROMPTS.text("closing", summary=summary)
         self.messages.append(ChatMessage(role="assistant", content=closing))
         return InterviewTurnResult(
             phase=self.phase,

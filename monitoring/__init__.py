@@ -1,5 +1,6 @@
 """LexIntake observability & monitoring."""
 
+from .app_logging import configure_logging, get_console_logger
 from .logger import (
     StructuredLogger,
     get_logger,
@@ -16,6 +17,8 @@ from .metrics import Metrics, get_metrics, reset_metrics
 __all__ = [
     "Metrics",
     "StructuredLogger",
+    "configure_logging",
+    "get_console_logger",
     "get_logger",
     "get_metrics",
     "log_case_value",

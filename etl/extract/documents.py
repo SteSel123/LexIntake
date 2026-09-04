@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-KB_DIR = Path(__file__).resolve().parent.parent / "kb"
+ROOT = Path(__file__).resolve().parents[2]
+KB_DIR = ROOT / "kb"
 
 JSON_SOURCES = [
     "practice_areas.json",

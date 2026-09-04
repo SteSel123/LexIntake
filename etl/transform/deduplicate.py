@@ -46,8 +46,8 @@ def deduplicate_all(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    from clean import clean_all
-    from extract import extract_all
+    from etl.extract.documents import extract_all
+    from etl.transform.clean import clean_all
 
     cleaned = clean_all(extract_all())
     unique = deduplicate_all(cleaned)

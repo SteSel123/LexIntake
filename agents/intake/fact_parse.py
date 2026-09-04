@@ -7,16 +7,11 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-AGENTS = Path(__file__).resolve().parent
-for path in (str(ROOT), str(AGENTS)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-try:
-    from agents.intake_agent import IntakeFacts  # noqa: E402
-except ImportError:  # pragma: no cover
-    from intake_agent import IntakeFacts  # noqa: E402
+from agents.intake.models import IntakeFacts  # noqa: E402
 
 _PRACTICE_HINTS = [
     ("personal injury", "Personal Injury"),

@@ -12,7 +12,7 @@
 ## 1. Setup
 
 1. Seed SQLite: `python db/init_structured_db.py`  
-2. Load vectors: `python db/load_kb_docs.py`  
+2. Load vectors: `python -m etl.pipeline`  
 3. Run eval: `python evaluation/run_evaluation.py`  
 
 Metrics are logged to `evaluation/logs/evaluation.jsonl`.
@@ -135,7 +135,7 @@ Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrai
 pip install -r requirements.txt
 copy .env.example .env   # optional: set OPENAI_API_KEY for live path
 python db/init_structured_db.py
-python db/load_kb_docs.py
+python -m etl.pipeline
 python evaluation/run_evaluation.py --providers local:deterministic --limit 5
 python ui/demo.py
 ```
