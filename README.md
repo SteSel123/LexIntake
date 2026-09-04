@@ -30,9 +30,7 @@ copy .env.example .env
 python db/init_structured_db.py
 
 # ETL → LanceDB kb_docs (OpenAI text-embedding-3-small by default)
-python db/load_kb_docs.py
-# or
-python etl/load_vector_db.py
+python -m etl.pipeline
 
 # UI demo
 python -m streamlit run ui/app.py
@@ -63,10 +61,12 @@ python ui/demo.py
 | Path | Purpose |
 |------|---------|
 | `kb/` | Knowledge base (practice areas, SOL, fees, cases, attorneys, clients, FAQs) |
-| `etl/` | Extract → clean → dedupe → chunk → metadata → embed → load |
-| `db/` | LanceDB vector store + SQLite schema/seed |
+| `etl/extract/` | Read and flatten KB files into document records |
+| `etl/transform/` | Clean, dedupe, chunk, attach metadata, embed |
+| `etl/load/` | Upsert chunks into LanceDB (`kb_docs`) |
+| `db/` | LanceDB vector store + SQLite (SQLAlchemy/Alembic) |
 | `tools/` | Agno tools |
-| `agents/` | Intake agent |
+| `agents/` | Intake and interview agents |
 | `scoring/` | Lead scoring engine |
 | `monitoring/` | JSONL logger, metrics, Streamlit dashboard |
 | `evaluation/` | Labeled leads, metrics, runner |

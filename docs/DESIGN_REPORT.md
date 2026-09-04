@@ -56,7 +56,7 @@ LexIntake automates first-pass screening with an **agentic RAG** workflow: plan 
 |-------|--------|-----------|
 | Agent framework | Agno | Tool decorator + Agent base class; reasoning + tool_choice |
 | Vector DB | LanceDB | Local, upsert by `chunk_id`, good for demos |
-| Structured DB | SQLite | Zero-ops local entities + FK relations |
+| Structured DB | SQLite + SQLAlchemy + Alembic | Local entities, ORM models, versioned schema |
 | Embeddings (default) | OpenAI `text-embedding-3-small` | Semantic RAG; configured via `.env` |
 | Embeddings (CI) | Deterministic hash embedder | Offline GitHub Actions smoke tests |
 | LLM (default) | OpenAI `gpt-4.1` | Planning refine + narrative explanations |
@@ -76,7 +76,11 @@ Designed for grounding intake decisions and conflict/value checks.
 
 ## 5. ETL design
 
-Pipeline steps: extract → clean → deduplicate → chunk → metadata → embeddings → load.
+Pipeline stages live under `etl/`:
+
+- **extract/** — read and flatten `kb/` into document records
+- **transform/** — clean → deduplicate → chunk → metadata → embeddings
+- **load/** — upsert into LanceDB `kb_docs` (optional JSON store)
 
 Properties:
 
@@ -153,7 +157,7 @@ Pull requests are used for instructor review. Clean commits map to feature areas
 
 ## 12. Risks & limitations
 
-- Multi-turn conversational interview is available in the Streamlit **Interview** tab (`agents/interview.py`).
+- Multi-turn conversational interview is available in the Streamlit **Interview** tab (`agents/interview/`).
 - Default local/dev path uses **OpenAI embeddings + gpt-4.1** when `OPENAI_API_KEY` is set; CI always uses **hash embeddings + deterministic agent**.
 - Observability uses custom JSONL metrics **and** Agno native tracing (`monitoring/agno_tracing.py` → `monitoring/traces.db`).
 - Case-value estimates depend on sparse synthetic comps; valuation accuracy is limited.

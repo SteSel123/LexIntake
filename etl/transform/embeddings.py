@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Protocol
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -179,11 +179,11 @@ def embed_chunks(
 
 
 if __name__ == "__main__":
-    from chunk import chunk_all
-    from clean import clean_all
-    from deduplicate import deduplicate_all
-    from extract import extract_all
-    from metadata import attach_metadata_all
+    from etl.extract.documents import extract_all
+    from etl.transform.chunk import chunk_all
+    from etl.transform.clean import clean_all
+    from etl.transform.deduplicate import deduplicate_all
+    from etl.transform.metadata import attach_metadata_all
 
     records, stats = embed_chunks(
         attach_metadata_all(chunk_all(deduplicate_all(clean_all(extract_all()))))

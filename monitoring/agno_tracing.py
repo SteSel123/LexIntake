@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
+from monitoring.app_logging import get_console_logger
+
 ROOT = Path(__file__).resolve().parent.parent
 MON_DIR = Path(__file__).resolve().parent
 TRACES_DB = MON_DIR / "traces.db"
 
-logger = logging.getLogger("lexintake.monitoring.agno")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = get_console_logger("monitoring.agno")
 
 _ENABLED = False
 _TRACE_DB: Any | None = None

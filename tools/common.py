@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 import sys
 import time as _time
@@ -21,12 +20,9 @@ for path in (str(ROOT), str(DB_DIR), str(ETL_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-logger = logging.getLogger("lexintake.tools")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+from monitoring.app_logging import get_console_logger  # noqa: E402
+
+logger = get_console_logger("tools")
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _YEARS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*years?", re.I)
@@ -179,10 +175,18 @@ def get_sqlite_connection():
         return None
 
 
-def vector_search(query: str, top_k: int = 5, practice_area: str | None = None) -> list[dict[str, Any]]:
+def vector_search(
+    query: str,
+    top_k: int = 5,
+    practice_area: str | None = None,
+    jurisdiction: str | None = None,
+    doc_type: str | None = None,
+    *,
+    log: bool = True,
+) -> list[dict[str, Any]]:
     """Search LanceDB kb_docs; returns [] on any failure."""
     try:
-        from embeddings import get_embedder
+        from etl.transform.embeddings import get_embedder
         from lancedb_store import ensure_kb_docs, search_kb_docs
 
         embedder = get_embedder()
@@ -191,24 +195,28 @@ def vector_search(query: str, top_k: int = 5, practice_area: str | None = None) 
             vector,
             top_k=top_k,
             practice_area=practice_area,
+            jurisdiction=jurisdiction,
+            doc_type=doc_type,
         )
-        try:
-            table = ensure_kb_docs(dimensions=len(vector))
-            total = int(table.count_rows())
-            from monitoring.logger import log_retrieval
+        if log:
+            try:
+                table = ensure_kb_docs(dimensions=len(vector))
+                total = int(table.count_rows())
+                from monitoring.logger import log_retrieval
 
-            log_retrieval(query, hits=len(hits), total_chunks=total)
-        except Exception:  # noqa: BLE001
-            pass
+                log_retrieval(query, hits=len(hits), total_chunks=total)
+            except Exception:  # noqa: BLE001
+                pass
         return hits
     except Exception as exc:  # noqa: BLE001
         logger.error("Vector search failed: %s", exc)
-        try:
-            from monitoring.logger import log_retrieval
+        if log:
+            try:
+                from monitoring.logger import log_retrieval
 
-            log_retrieval(query, hits=0, total_chunks=0)
-        except Exception:  # noqa: BLE001
-            pass
+                log_retrieval(query, hits=0, total_chunks=0)
+            except Exception:  # noqa: BLE001
+                pass
         return []
 
 

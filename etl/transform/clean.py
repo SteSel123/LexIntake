@@ -40,7 +40,7 @@ def clean_all(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    from extract import extract_all
+    from etl.extract.documents import extract_all
 
     docs = clean_all(extract_all())
     print(f"Cleaned {len(docs)} documents")

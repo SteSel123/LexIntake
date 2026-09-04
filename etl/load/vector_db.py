@@ -1,6 +1,6 @@
 """Load embedded chunks into LanceDB (kb_docs) and optional JSON store.
 
-Pipeline properties:
+Load properties:
 - Re-runnable: safe to execute repeatedly
 - Idempotent: upsert by chunk_id (no duplicates)
 - Incremental: new/changed chunks upserted; existing rows retained
@@ -14,14 +14,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from chunk import chunk_all
-from clean import clean_all
-from deduplicate import deduplicate_all
-from embeddings import DEFAULT_DIMENSIONS, embed_chunks
-from extract import extract_all
-from metadata import attach_metadata_all
+from etl.transform.embeddings import DEFAULT_DIMENSIONS
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DB_PKG = ROOT / "db"
 if str(DB_PKG) not in sys.path:
     sys.path.insert(0, str(DB_PKG))
@@ -135,55 +130,41 @@ class LocalVectorDB:
         return scored[:top_k]
 
 
-def run_pipeline(
-    db_path: Path | None = None,
-    full_refresh: bool = False,
-    *,
-    write_json: bool = False,
-) -> dict[str, Any]:
-    """
-    Extract → clean → deduplicate → chunk → metadata → embed → LanceDB upsert.
-
-    Upserts into collection `kb_docs` by chunk_id. Existing rows not in the
-    batch are retained (incremental). Set write_json=True to also refresh the
-    legacy JSON store.
-    """
-    documents = extract_all()
-    cleaned = clean_all(documents)
-    unique = deduplicate_all(cleaned)
-    chunks = chunk_all(unique)
-    enriched = attach_metadata_all(chunks)
-
+def existing_by_id(db_path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Return previously persisted records keyed by chunk_id (for incremental embed)."""
     json_db = LocalVectorDB(path=db_path)
     json_db.load()
-    existing = {} if full_refresh else json_db.by_id()
+    return json_db.by_id()
 
-    embedded, embed_stats = embed_chunks(enriched, existing_by_id=existing)
 
+def load(
+    records: list[dict[str, Any]],
+    *,
+    db_path: Path | None = None,
+    write_json: bool = False,
+    dimensions: int | None = None,
+    recreate_on_dim_mismatch: bool = False,
+) -> dict[str, Any]:
+    """Persist embedded chunks to LanceDB; optionally refresh the JSON store."""
+    dims = dimensions or DEFAULT_DIMENSIONS
     lance = connect()
-    table = ensure_kb_docs(lance, dimensions=DEFAULT_DIMENSIONS)
+    table = ensure_kb_docs(
+        lance,
+        dimensions=dims,
+        recreate_on_dim_mismatch=recreate_on_dim_mismatch,
+    )
     lance_stats = upsert_kb_docs(
-        embedded,
+        records,
         db=lance,
         table=table,
-        dimensions=DEFAULT_DIMENSIONS,
+        dimensions=dims,
     )
 
     json_changed = 0
     if write_json:
-        json_changed = json_db.upsert(embedded)
+        json_db = LocalVectorDB(path=db_path)
+        json_db.load()
+        json_changed = json_db.upsert(records)
         json_db.save()
 
-    print(
-        "Pipeline complete: "
-        f"extracted={len(documents)} cleaned={len(cleaned)} unique={len(unique)} "
-        f"chunks={len(chunks)} embedded={embed_stats['embedded']} "
-        f"reused={embed_stats['reused']} lance_inserted={lance_stats['inserted']} "
-        f"lance_updated={lance_stats['updated']} lance_total={lance_stats['total']} "
-        f"json_changed={json_changed}"
-    )
-    return {"embed_stats": embed_stats, "lance_stats": lance_stats, "json_changed": json_changed}
-
-
-if __name__ == "__main__":
-    run_pipeline()
+    return {"lance_stats": lance_stats, "json_changed": json_changed}

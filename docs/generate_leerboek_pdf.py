@@ -325,9 +325,9 @@ class Leerboek(FPDF):
                 [
                     "LexIntake/",
                     "  kb/          knowledge base",
-                    "  etl/         extract..embed..load",
+                    "  etl/extract  etl/transform  etl/load",
                     "  db/          LanceDB + SQLite",
-                    "  agents/      IntakeAgent + interview",
+                    "  agents/      intake/ + interview/",
                     "  tools/       Agno tools",
                     "  scoring/     score_lead",
                     "  monitoring/  metrics + Agno traces",
@@ -505,7 +505,7 @@ class Leerboek(FPDF):
             )
         elif "systeem starten" in t or "stap-voor-stap" in t:
             self.vflow(
-                ["pip install", "init_structured_db", "load_kb_docs", "demo.py", "streamlit UI"],
+                ["pip install", "init_structured_db", "etl.pipeline", "demo.py", "streamlit UI"],
                 title="Startvolgorde",
             )
         elif "demo-video" in t:
@@ -602,10 +602,10 @@ class Leerboek(FPDF):
         elif "cheatsheet: bestanden" in t:
             self.tree(
                 [
-                    "agents/intake_agent.py  <- loop",
+                    "agents/intake/agent.py  <- loop",
                     "tools/*.py             <- acties",
                     "scoring/lead_scoring.py",
-                    "db/load_kb_docs.py",
+                    "etl/pipeline.py",
                     "ui/app.py",
                     ".github/workflows/ci.yml",
                 ],
@@ -925,7 +925,7 @@ def build() -> Path:
         ("etl/", "Pipeline die KB omzet naar chunks + embeddings en laadt."),
         ("db/", "LanceDB (vectoren) + SQLite (gestructureerde entities) + load scripts."),
         ("tools/", "Agno @tool functies: SOL, conflict, value, route, fallback."),
-        ("agents/", "IntakeAgent, interview-sessie, LLM factory, fact parsing."),
+        ("agents/", "intake/ (IntakeAgent + fact parsing), interview/, llm.py."),
         ("scoring/", "Deterministische score_lead() → beslissing + priority."),
         ("monitoring/", "JSONL logger, metrics, Streamlit dashboard, Agno traces."),
         ("evaluation/", "leads.csv, metrics, run_evaluation.py, reports logs."),
@@ -981,7 +981,7 @@ def build() -> Path:
     )
     pdf.note(
         "Wijzig je de KB, dan moet je embeddings opnieuw laden "
-        "(python db/load_kb_docs.py) zodat LanceDB synchroon blijft."
+        "(python -m etl.pipeline) zodat LanceDB synchroon blijft."
     )
     
 
@@ -1014,9 +1014,7 @@ def build() -> Path:
     pdf.h2("Commands")
     pdf.code(
         "python db/init_structured_db.py\n"
-        "python db/load_kb_docs.py\n"
-        "# of via ETL entrypoint:\n"
-        "python etl/load_vector_db.py"
+        "python -m etl.pipeline"
     )
     
 
@@ -1032,7 +1030,7 @@ def build() -> Path:
             "Dimensies: 1536",
             "Echte semantische gelijkenis (“rear-end collision” ≈ “car accident injury”)",
             "Vereist OPENAI_API_KEY",
-            "Gebruikt via Agno OpenAIEmbedder adapter in etl/embeddings.py",
+            "Gebruikt via Agno OpenAIEmbedder adapter in etl/transform/embeddings.py",
         ]
     )
     pdf.h2("Hash embedder (CI / offline)")
@@ -1155,7 +1153,7 @@ def build() -> Path:
     # 12
     pdf.h1("De Intake Agent (plan → retrieve → tools → decide)")
     pdf.p(
-        "Bestand: agents/intake_agent.py. Klasse IntakeAgent erft van Agno Agent."
+        "Bestand: agents/intake/agent.py. Klasse IntakeAgent erft van Agno Agent."
     )
     phases = [
         ("Plan", "Welke velden missen? Welke tools? Welke retrieval-query? Escaleren?"),
@@ -1180,7 +1178,7 @@ def build() -> Path:
     pdf.h1("Multi-turn interview met prospects")
     pdf.p(
         "De PDF vraagt om ‘Interview prospective clients’. Daarom bestaat er een "
-        "InterviewSession (agents/interview.py) en een UI-tab ‘Interview (multi-turn)’."
+        "InterviewSession (agents/interview/agent.py) en een UI-tab ‘Interview (multi-turn)’."
     )
     pdf.h2("Hoe werkt het?")
     pdf.bullet(
@@ -1382,7 +1380,7 @@ def build() -> Path:
         [
             "Python 3.11 + pip install",
             "init_structured_db",
-            "load_kb_docs (hash embeddings)",
+            "etl.pipeline (hash embeddings)",
             "ui/demo.py",
             "evaluation --limit 5 (local)",
             "upload logs als artifacts",
@@ -1402,7 +1400,7 @@ def build() -> Path:
         "copy .env.example .env\n"
         "# Zet OPENAI_API_KEY in .env\n"
         "python db/init_structured_db.py\n"
-        "python db/load_kb_docs.py\n"
+        "python -m etl.pipeline\n"
         "python ui/demo.py\n"
         "python -m streamlit run ui/app.py"
     )
@@ -1412,7 +1410,7 @@ def build() -> Path:
         "$env:LEXINTAKE_EMBEDDING_DIMS='256'\n"
         "$env:LEXINTAKE_LLM_PROVIDER='local'\n"
         "$env:LEXINTAKE_AGNO_TRACING='0'\n"
-        "python db/load_kb_docs.py\n"
+        "python -m etl.pipeline\n"
         "python ui/demo.py"
     )
     pdf.h2("Handige checks")
@@ -1461,7 +1459,7 @@ def build() -> Path:
         ),
         (
             "Dimensie mismatch LanceDB",
-            "Normaal bij switch hash↔OpenAI. load_kb_docs herbout de tabel.",
+            "Normaal bij switch hash↔OpenAI. python -m etl.pipeline herbout de tabel.",
         ),
         (
             "Conflict-demo faalt",
@@ -1494,7 +1492,7 @@ def build() -> Path:
     )
     pdf.h2("Oefening B — ETL")
     pdf.p(
-        "Voeg één FAQ-regel toe in kb/faqs.md, run load_kb_docs, en toon dat retrieval "
+        "Voeg één FAQ-regel toe in kb/faqs.md, run python -m etl.pipeline, en toon dat retrieval "
         "de nieuwe chunk kan vinden."
     )
     pdf.h2("Oefening C — Tools")
@@ -1666,7 +1664,7 @@ def build() -> Path:
 
     pdf.h1("Provider-agnostic ontwerp")
     pdf.p(
-        "config.py + agents/llm.py + etl/embeddings.py scheiden ‘welke vendor’ van "
+        "config.py + agents/llm.py + etl/transform/embeddings.py scheiden ‘welke vendor’ van "
         "‘welke business logic’. Daardoor kun je OpenAI, Anthropic of Groq kiezen voor "
         "LLM, en openai/hash voor embeddings, zonder tools/scoring te herschrijven."
     )
@@ -1718,7 +1716,7 @@ def build() -> Path:
         "pip install -r requirements.txt\n"
         "copy .env.example .env\n"
         "python db/init_structured_db.py\n"
-        "python db/load_kb_docs.py\n"
+        "python -m etl.pipeline\n"
         "python ui/demo.py\n"
         "python -m streamlit run ui/app.py\n"
         "python -m streamlit run monitoring/dashboard.py\n"
@@ -1730,12 +1728,12 @@ def build() -> Path:
     mapping = [
         "Opdrachtbegrip -> docs/DESIGN_REPORT.md + dit leerboek",
         "KB -> kb/*.json + faqs.md",
-        "ETL -> etl/*.py",
-        "Vector load -> db/load_kb_docs.py + db/lancedb_store.py",
-        "SQLite -> db/sqlite_db.py + db/sql/schema.sql",
+        "ETL -> etl/extract + etl/transform + etl/load",
+        "Vector load -> etl/pipeline.py + db/lancedb_store.py",
+        "SQLite -> db/models.py + db/migrations + db/sqlite_db.py",
         "Tools -> tools/*.py",
-        "Agent -> agents/intake_agent.py",
-        "Interview -> agents/interview.py",
+        "Agent -> agents/intake/agent.py",
+        "Interview -> agents/interview/agent.py",
         "Scoring -> scoring/lead_scoring.py",
         "UI -> ui/app.py",
         "Eval -> evaluation/run_evaluation.py",

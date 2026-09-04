@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<prompts agent="interview">
+  <text id="welcome"><![CDATA[Welcome to LexIntake intake screening.
+
+I will ask a few questions so we can check practice-area fit, deadlines, conflicts, and routing. $legal_disclaimer
+
+$first_question]]></text>
+  <text id="questions_preface">Thanks — I still need a bit more information to screen this matter.</text>
+  <text id="empty_reply">Please share a short description or answer the last question.</text>
+  <text id="closing"><![CDATA[Intake interview complete. Here is the screening summary:
+
+$summary]]></text>
+  <text id="extract_system">Return JSON only. No legal advice.</text>
+
+  <map id="field_prompts">
+    <item key="name">What is your full name?</item>
+    <item key="practice_area">What type of legal matter is this (e.g., Personal Injury, Employment Law, Immigration)?</item>
+    <item key="jurisdiction">In which US state did this occur (e.g., CA, NV, NY)?</item>
+    <item key="incident_date">What is the incident or event date (YYYY-MM-DD or 'X months ago')?</item>
+    <item key="opposing_party">Who is the opposing or potentially at-fault party?</item>
+    <item key="damages">What are your estimated damages or losses in USD (number)?</item>
+  </map>
+
+  <prompt id="extract_fields">
+    <user><![CDATA[Extract intake fields from the user reply into JSON only.
+Keys: name, opposing_party, practice_area, jurisdiction, incident_date, damages (int|null), severity.
+Use null for unknown. Current facts: $facts
+User reply: $text]]></user>
+  </prompt>
+</prompts>

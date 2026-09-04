@@ -57,7 +57,7 @@ jobs:
         run: python db/init_structured_db.py
 
       - name: Load KB documents (hash embeddings)
-        run: python db/load_kb_docs.py
+        run: python -m etl.pipeline
 
       - name: Run demo scenarios
         run: python ui/demo.py

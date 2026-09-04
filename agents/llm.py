@@ -1,8 +1,11 @@
-"""LLM factory for LexIntake (OpenAI / Anthropic / Groq)."""
+"""LLM factory and completion helpers for LexIntake."""
 
 from __future__ import annotations
 
+import json
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -72,3 +75,73 @@ def provider_available(provider: str) -> bool:
     if p == "groq":
         return bool(GROQ_API_KEY)
     return False
+
+
+COST_RATES = {
+    "openai": (0.000002, 0.000008),
+    "anthropic": (0.000003, 0.000015),
+    "groq": (0.0000006, 0.0000008),
+}
+
+
+@dataclass
+class CompletionResult:
+    content: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+def estimate_cost(provider: str, input_tokens: int, output_tokens: int) -> float:
+    inn, out = COST_RATES.get(provider, COST_RATES["openai"])
+    return input_tokens * inn + output_tokens * out
+
+
+def parse_json_object(raw: str) -> dict[str, Any] | None:
+    """Extract the first JSON object from an LLM reply."""
+    if not raw:
+        return None
+    try:
+        match = re.search(r"\{.*\}", raw, flags=re.S)
+        payload = json.loads(match.group(0) if match else raw)
+        return payload if isinstance(payload, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def complete(model: Any, prompt: str, *, system: str | None = None) -> CompletionResult:
+    """Single-shot LLM completion (no tool loop)."""
+    if not model:
+        return CompletionResult(content="")
+    from agno.models.message import Message
+
+    messages = []
+    if system:
+        messages.append(Message(role="system", content=system))
+    messages.append(Message(role="user", content=prompt))
+    response = model.response(messages)
+    content = getattr(response, "content", None) or ""
+    usage = getattr(response, "response_usage", None)
+    in_tok = int(
+        getattr(response, "input_tokens", None)
+        or getattr(usage, "input_tokens", None)
+        or getattr(usage, "prompt_tokens", None)
+        or 0
+    )
+    out_tok = int(
+        getattr(response, "output_tokens", None)
+        or getattr(usage, "output_tokens", None)
+        or getattr(usage, "completion_tokens", None)
+        or 0
+    )
+    if in_tok == 0 and out_tok == 0:
+        in_tok = max(1, len(prompt) // 4)
+        out_tok = max(1, len(str(content)) // 4)
+    total = int(getattr(response, "total_tokens", 0) or (in_tok + out_tok))
+    return CompletionResult(
+        content=str(content).strip(),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        total_tokens=total,
+    )
+

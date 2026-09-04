@@ -11,7 +11,7 @@ Use this script to record a **3–5 minute demo video**.
 ```powershell
 pip install -r requirements.txt
 python db/init_structured_db.py
-python db/load_kb_docs.py
+python -m etl.pipeline
 ```
 
 ## Recording outline (suggested)
@@ -27,7 +27,7 @@ python db/load_kb_docs.py
 Show briefly:
 
 - `kb/` knowledge base
-- `etl/` pipeline
+- `etl/extract`, `etl/transform`, `etl/load` pipeline
 - `db/` LanceDB + SQLite
 - `agents/` + `tools/` + `scoring/`
 - `monitoring/` + `evaluation/` + `ui/`

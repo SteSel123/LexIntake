@@ -65,7 +65,7 @@ def load_leads(path: Path) -> list[dict[str, Any]]:
 
 
 def build_intake_facts(fields: dict[str, str]):
-    from agents.intake_agent import IntakeFacts
+    from agents.intake.models import IntakeFacts
 
     damages_raw = fields.get("damages", "0")
     try:
@@ -351,7 +351,7 @@ def main() -> None:
         leads = leads[: args.limit]
     providers = parse_providers(args.providers)
 
-    from agents.intake_agent import IntakeAgent
+    from agents.intake.agent import IntakeAgent
     from agents.llm import provider_available
 
     logger = EvalLogger()

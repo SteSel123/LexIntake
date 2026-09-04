@@ -1,26 +1,34 @@
-"""SQLite structured database for LexIntake entities."""
+"""SQLite structured database: Alembic schema + SQLAlchemy seed."""
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import func, inspect, select
+from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.engine import Engine
+
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB_PATH = Path(
-    os.getenv("LEXINTAKE_SQLITE_PATH", ROOT / "db" / "lexintake.db")
-)
-SCHEMA_PATH = Path(__file__).resolve().parent / "sql" / "schema.sql"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from db.engine import DEFAULT_DB_PATH, get_engine, session_scope, sqlite_url
+from db.models import Attorney, Client, PastCase
+
 KB_DIR = ROOT / "kb"
+ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
+HEAD_REVISION = "001_initial"
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
-    """Open SQLite connection with foreign keys enabled."""
+    """Open a sqlite3 connection for tools that still use raw SQL."""
     path = Path(db_path or DEFAULT_DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
@@ -29,16 +37,57 @@ def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_schema(conn: sqlite3.Connection | None = None, *, db_path: Path | str | None = None) -> sqlite3.Connection:
-    """Create clients, attorneys, and past_cases tables if they do not exist."""
-    owns_connection = conn is None
-    connection = conn or connect(db_path)
-    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    connection.executescript(schema_sql)
-    connection.commit()
-    if owns_connection:
-        return connection
-    return connection
+def _alembic_config(db_path: Path):
+    from alembic.config import Config
+
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(ALEMBIC_INI.parent / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", sqlite_url(db_path))
+    return cfg
+
+
+def _current_revision(engine: Engine) -> str | None:
+    if "alembic_version" not in inspect(engine).get_table_names():
+        return None
+    with engine.connect() as connection:
+        row = connection.exec_driver_sql("SELECT version_num FROM alembic_version").fetchone()
+    return str(row[0]) if row else None
+
+
+def _has_legacy_tables(engine: Engine) -> bool:
+    tables = set(inspect(engine).get_table_names())
+    return {"clients", "attorneys", "past_cases"}.issubset(tables)
+
+
+def upgrade_schema(*, db_path: Path | str | None = None) -> None:
+    """Apply Alembic migrations. Stamp existing pre-Alembic databases at head."""
+    from alembic import command
+    from alembic.script import ScriptDirectory
+
+    path = Path(db_path or DEFAULT_DB_PATH)
+    engine = get_engine(path)
+    cfg = _alembic_config(path)
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    revision = _current_revision(engine)
+    if revision == head:
+        return
+    if revision is None and _has_legacy_tables(engine):
+        command.stamp(cfg, head or HEAD_REVISION)
+        return
+    command.upgrade(cfg, "head")
+
+
+def init_schema(
+    conn: sqlite3.Connection | None = None,
+    *,
+    db_path: Path | str | None = None,
+) -> sqlite3.Connection:
+    """Create or migrate structured tables, then return a sqlite3 connection."""
+    path = Path(db_path or DEFAULT_DB_PATH)
+    upgrade_schema(db_path=path)
+    if conn is not None:
+        return conn
+    return connect(path)
 
 
 def _slug(value: str) -> str:
@@ -59,75 +108,56 @@ def _read_kb_json(filename: str) -> dict[str, Any]:
         return json.load(f)
 
 
-def upsert_client(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
-    conn.execute(
-        """
-        INSERT INTO clients (id, name, email, phone, state)
-        VALUES (:id, :name, :email, :phone, :state)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            email = excluded.email,
-            phone = excluded.phone,
-            state = excluded.state
-        """,
+def _upsert(session, model, row: dict[str, Any], update_fields: tuple[str, ...]) -> None:
+    stmt = insert(model).values(**row)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["id"],
+        set_={field: stmt.excluded[field] for field in update_fields},
+    )
+    session.execute(stmt)
+
+
+def upsert_client(session, row: dict[str, Any]) -> None:
+    _upsert(session, Client, row, ("name", "email", "phone", "state"))
+
+
+def upsert_attorney(session, row: dict[str, Any]) -> None:
+    _upsert(
+        session,
+        Attorney,
         row,
+        ("name", "specialization", "experience_years", "jurisdictions", "availability"),
     )
 
 
-def upsert_attorney(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
-    conn.execute(
-        """
-        INSERT INTO attorneys (
-            id, name, specialization, experience_years, jurisdictions, availability
-        )
-        VALUES (
-            :id, :name, :specialization, :experience_years, :jurisdictions, :availability
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            specialization = excluded.specialization,
-            experience_years = excluded.experience_years,
-            jurisdictions = excluded.jurisdictions,
-            availability = excluded.availability
-        """,
+def upsert_past_case(session, row: dict[str, Any]) -> None:
+    _upsert(
+        session,
+        PastCase,
         row,
+        (
+            "title",
+            "practice_area",
+            "jurisdiction",
+            "facts",
+            "outcome",
+            "settlement_amount",
+            "attorney_id",
+            "client_id",
+        ),
     )
 
 
-def upsert_past_case(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
-    conn.execute(
-        """
-        INSERT INTO past_cases (
-            id, title, practice_area, jurisdiction, facts, outcome,
-            settlement_amount, attorney_id, client_id
-        )
-        VALUES (
-            :id, :title, :practice_area, :jurisdiction, :facts, :outcome,
-            :settlement_amount, :attorney_id, :client_id
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title,
-            practice_area = excluded.practice_area,
-            jurisdiction = excluded.jurisdiction,
-            facts = excluded.facts,
-            outcome = excluded.outcome,
-            settlement_amount = excluded.settlement_amount,
-            attorney_id = excluded.attorney_id,
-            client_id = excluded.client_id
-        """,
-        row,
-    )
-
-
-def seed_from_kb(conn: sqlite3.Connection | None = None, *, db_path: Path | str | None = None) -> dict[str, int]:
+def seed_from_kb(conn: Any | None = None, *, db_path: Path | str | None = None) -> dict[str, int]:
     """
     Idempotent seed from kb/*.json into structured tables.
 
     Links past_cases to attorneys/clients in the same practice area by index
-    when both exist.
+    when both exist. `conn` is accepted for compatibility and ignored.
     """
-    owns_connection = conn is None
-    connection = conn or init_schema(db_path=db_path)
+    del conn
+    path = Path(db_path or DEFAULT_DB_PATH)
+    upgrade_schema(db_path=path)
 
     clients_by_area = _read_kb_json("clients.json")
     attorneys_by_area = _read_kb_json("attorneys.json")
@@ -136,60 +166,56 @@ def seed_from_kb(conn: sqlite3.Connection | None = None, *, db_path: Path | str 
     client_counts = 0
     attorney_counts = 0
     case_counts = 0
-
     attorney_ids: dict[str, list[str]] = {}
     client_ids: dict[str, list[str]] = {}
 
-    for practice_area, clients in clients_by_area.items():
-        client_ids[practice_area] = []
-        for client in clients:
-            row = {
-                "id": client["id"],
-                "name": client["name"],
-                "email": client.get("email"),
-                "phone": client.get("phone"),
-                "state": client.get("jurisdiction") or client.get("state"),
-            }
-            upsert_client(connection, row)
-            client_ids[practice_area].append(row["id"])
-            client_counts += 1
+    with session_scope(path) as session:
+        for practice_area, clients in clients_by_area.items():
+            client_ids[practice_area] = []
+            for client in clients:
+                row = {
+                    "id": client["id"],
+                    "name": client["name"],
+                    "email": client.get("email"),
+                    "phone": client.get("phone"),
+                    "state": client.get("jurisdiction") or client.get("state"),
+                }
+                upsert_client(session, row)
+                client_ids[practice_area].append(row["id"])
+                client_counts += 1
 
-    for practice_area, attorneys in attorneys_by_area.items():
-        attorney_ids[practice_area] = []
-        for attorney in attorneys:
-            row = {
-                "id": _attorney_id(attorney["name"], practice_area),
-                "name": attorney["name"],
-                "specialization": attorney["specialization"],
-                "experience_years": attorney.get("experience_years"),
-                "jurisdictions": json.dumps(attorney.get("jurisdictions") or [], ensure_ascii=False),
-                "availability": attorney.get("availability"),
-            }
-            upsert_attorney(connection, row)
-            attorney_ids[practice_area].append(row["id"])
-            attorney_counts += 1
+        for practice_area, attorneys in attorneys_by_area.items():
+            attorney_ids[practice_area] = []
+            for attorney in attorneys:
+                row = {
+                    "id": _attorney_id(attorney["name"], practice_area),
+                    "name": attorney["name"],
+                    "specialization": attorney["specialization"],
+                    "experience_years": attorney.get("experience_years"),
+                    "jurisdictions": json.dumps(attorney.get("jurisdictions") or [], ensure_ascii=False),
+                    "availability": attorney.get("availability"),
+                }
+                upsert_attorney(session, row)
+                attorney_ids[practice_area].append(row["id"])
+                attorney_counts += 1
 
-    for practice_area, cases in cases_by_area.items():
-        for index, case in enumerate(cases):
-            att_list = attorney_ids.get(practice_area) or []
-            cli_list = client_ids.get(practice_area) or []
-            row = {
-                "id": _case_id(practice_area, case["title"], index),
-                "title": case["title"],
-                "practice_area": practice_area,
-                "jurisdiction": case["jurisdiction"],
-                "facts": case["facts"],
-                "outcome": case.get("outcome"),
-                "settlement_amount": case.get("settlement_or_award_usd"),
-                "attorney_id": att_list[index] if index < len(att_list) else (att_list[0] if att_list else None),
-                "client_id": cli_list[index] if index < len(cli_list) else (cli_list[0] if cli_list else None),
-            }
-            upsert_past_case(connection, row)
-            case_counts += 1
-
-    connection.commit()
-    if owns_connection:
-        connection.close()
+        for practice_area, cases in cases_by_area.items():
+            for index, case in enumerate(cases):
+                att_list = attorney_ids.get(practice_area) or []
+                cli_list = client_ids.get(practice_area) or []
+                row = {
+                    "id": _case_id(practice_area, case["title"], index),
+                    "title": case["title"],
+                    "practice_area": practice_area,
+                    "jurisdiction": case["jurisdiction"],
+                    "facts": case["facts"],
+                    "outcome": case.get("outcome"),
+                    "settlement_amount": case.get("settlement_or_award_usd"),
+                    "attorney_id": att_list[index] if index < len(att_list) else (att_list[0] if att_list else None),
+                    "client_id": cli_list[index] if index < len(cli_list) else (cli_list[0] if cli_list else None),
+                }
+                upsert_past_case(session, row)
+                case_counts += 1
 
     return {
         "clients": client_counts,
@@ -198,20 +224,21 @@ def seed_from_kb(conn: sqlite3.Connection | None = None, *, db_path: Path | str 
     }
 
 
-def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for table in ("clients", "attorneys", "past_cases"):
-        counts[table] = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
-    return counts
+def table_counts(*, db_path: Path | str | None = None) -> dict[str, int]:
+    with session_scope(db_path) as session:
+        return {
+            "clients": session.scalar(select(func.count()).select_from(Client)) or 0,
+            "attorneys": session.scalar(select(func.count()).select_from(Attorney)) or 0,
+            "past_cases": session.scalar(select(func.count()).select_from(PastCase)) or 0,
+        }
 
 
 def init_db(*, db_path: Path | str | None = None, seed: bool = True) -> dict[str, Any]:
-    """Initialize schema and optionally seed from the knowledge base."""
-    conn = init_schema(db_path=db_path)
-    seeded = seed_from_kb(conn) if seed else {"clients": 0, "attorneys": 0, "past_cases": 0}
-    counts = table_counts(conn)
+    """Migrate schema and optionally seed from the knowledge base."""
     path = Path(db_path or DEFAULT_DB_PATH)
-    conn.close()
+    upgrade_schema(db_path=path)
+    seeded = seed_from_kb(db_path=path) if seed else {"clients": 0, "attorneys": 0, "past_cases": 0}
+    counts = table_counts(db_path=path)
     return {"db_path": str(path), "seeded": seeded, "counts": counts}
 
 
