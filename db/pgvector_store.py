@@ -1,4 +1,8 @@
-"""PostgreSQL + pgvector store for heterogeneous KB chunks (kb_docs)."""
+"""PostgreSQL + pgvector store for heterogeneous KB chunks (kb_docs).
+
+Manages the vector table used by RAG retrieval: schema ensure, bulk upsert from
+ETL, cosine similarity search, and optional pg_trgm fuzzy fallback.
+"""
 
 from __future__ import annotations
 
@@ -16,15 +20,21 @@ from tools.common import slugify
 COLLECTION_NAME = "kb_docs"
 
 
+# --- Normalization helpers -------------------------------------------------
+
+
 def slugify_practice_area(value: str | None) -> str:
+    """Normalize practice area strings to slug form for consistent filtering."""
     return slugify(value)
 
 
 def normalize_doc_type(value: str | None) -> str:
+    """Normalize document type metadata to slug form."""
     return slugify(value)
 
 
 def _as_float_vector(values: Iterable[float], dimensions: int) -> list[float]:
+    """Validate embedding length before casting to pgvector."""
     vector = [float(v) for v in values]
     if len(vector) != dimensions:
         raise ValueError(
@@ -34,8 +44,12 @@ def _as_float_vector(values: Iterable[float], dimensions: int) -> list[float]:
 
 
 def _vector_literal(vector: list[float]) -> str:
+    """Format a Python float list as a pgvector literal string ``[1,2,3]``."""
     # pgvector accepts '[1,2,3]'::vector
     return "[" + ",".join(str(float(x)) for x in vector) + "]"
+
+
+# --- Schema ensure ---------------------------------------------------------
 
 
 def ensure_kb_docs(
@@ -141,7 +155,11 @@ def ensure_kb_docs(
     return eng
 
 
+# --- Row counts and bulk upsert --------------------------------------------
+
+
 def count_rows(engine: Engine | None = None) -> int:
+    """Return total rows in ``kb_docs`` (table must exist or is created first)."""
     eng = engine or ensure_kb_docs()
     with eng.connect() as conn:
         return int(conn.execute(text("SELECT COUNT(*) FROM kb_docs")).scalar() or 0)
@@ -250,6 +268,9 @@ def upsert_kb_docs(
     }
 
 
+# --- Read path for incremental ETL -----------------------------------------
+
+
 def existing_by_id(
     *,
     engine: Engine | None = None,
@@ -305,6 +326,9 @@ def existing_by_id(
                 "metadata": meta,
             }
         return out
+
+
+# --- Vector and fuzzy search -----------------------------------------------
 
 
 def search_kb_docs(
@@ -417,13 +441,65 @@ def fuzzy_text_search(
     return out
 
 
+def list_kb_docs(
+    *,
+    top_k: int = 5,
+    practice_area: str | None = None,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    """Return any kb_docs rows (no embedding). Used as grounding fallback."""
+    eng = ensure_kb_docs(engine, recreate_on_dim_mismatch=False)
+    params: dict[str, Any] = {"limit": int(top_k)}
+    clauses = ["TRUE"]
+    if practice_area:
+        clauses.append("practice_area = :practice_area")
+        params["practice_area"] = slugify_practice_area(practice_area)
+    where = " AND ".join(clauses)
+    sql = f"""
+        SELECT chunk_id, text, doc_type, practice_area, jurisdictions, payload
+        FROM kb_docs
+        WHERE {where}
+        ORDER BY updated_at DESC NULLS LAST, chunk_id
+        LIMIT :limit
+    """
+    with eng.connect() as conn:
+        rows = list(conn.execute(text(sql), params).mappings())
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        payload = row["payload"] or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = {}
+        out.append(
+            {
+                "chunk_id": row["chunk_id"],
+                "text": row["text"],
+                "metadata": {
+                    "practice_area": row["practice_area"],
+                    "jurisdictions": list(row["jurisdictions"] or []),
+                    "doc_type": row["doc_type"],
+                    **(payload if isinstance(payload, dict) else {}),
+                },
+            }
+        )
+    return out
+
+
+# --- Compatibility shim for table-like callers -----------------------------
+
+
 # Thin wrappers used by callers that expect a table-like object with count_rows().
 class _PgTable:
+    """Minimal adapter so legacy code can call ``open_table().count_rows()``."""
+
     def count_rows(self) -> int:
         return count_rows()
 
 
 def open_table() -> _PgTable:
+    """Ensure ``kb_docs`` exists and return a count-only table handle."""
     ensure_kb_docs()
     return _PgTable()
 

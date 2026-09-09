@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from agents.intake.models import IntakeFacts, KBCitation, PlanResult, RetrieveResult
-from tools.common import match_practice_area, vector_search
+from tools.common import match_practice_area
 
 
 def retrieve(
@@ -24,6 +24,8 @@ def retrieve(
     Query kb_docs with metadata filters; return top-k chunks + citations.
 
     Skips entirely when `plan.need_retrieval` is False (incomplete / no query signal).
+    Embeds the query once, then relaxes filters; falls back to fuzzy / any-row
+    lookups so smoke scenarios still get grounding citations when filters miss.
     """
     if not plan.need_retrieval:
         if log:
@@ -43,41 +45,69 @@ def retrieve(
                 seen.add(chunk_id)
                 collected.append(hit)
 
-    # One vector search per planned doc_type (sol_rules, past_case, …), then merge.
-    for doc_type in plan.doc_types or [None]:
-        _ingest(
-            vector_search(
-                query,
-                top_k=top_k,
-                practice_area=practice_area,
-                jurisdiction=facts.jurisdiction,
-                doc_type=doc_type,
-                log=False,
-            )
+    try:
+        from db.pgvector_store import (
+            fuzzy_text_search,
+            list_kb_docs,
+            search_kb_docs,
+        )
+        from etl.transform.embeddings import get_embedder
+
+        # One embedding for all filter variants (avoids rate-limit / silent empty retries).
+        vector = get_embedder().embed([query])[0]
+        doc_types = list(plan.doc_types) if plan.doc_types else [None]
+        filter_passes: list[dict[str, Any]] = [
+            {
+                "practice_area": practice_area,
+                "jurisdiction": facts.jurisdiction,
+                "doc_type": doc_type,
+            }
+            for doc_type in doc_types
+        ]
+        filter_passes.extend(
+            [
+                {
+                    "practice_area": practice_area,
+                    "jurisdiction": None,
+                    "doc_type": doc_types[0],
+                },
+                {"practice_area": practice_area, "jurisdiction": None, "doc_type": None},
+                {"practice_area": None, "jurisdiction": None, "doc_type": None},
+            ]
         )
 
-    # Progressively relax filters when metadata is too strict for the seeded KB.
-    if not collected:
-        _ingest(
-            vector_search(
-                query,
-                top_k=top_k,
-                practice_area=practice_area,
-                doc_type=(plan.doc_types or [None])[0],
-                log=False,
+        for filters in filter_passes:
+            if collected:
+                break
+            _ingest(
+                search_kb_docs(
+                    vector,
+                    top_k=top_k,
+                    practice_area=filters["practice_area"],
+                    jurisdiction=filters["jurisdiction"],
+                    doc_type=filters["doc_type"],
+                )
             )
-        )
-    if not collected:
-        _ingest(
-            vector_search(
-                query,
-                top_k=top_k,
-                practice_area=practice_area,
-                log=False,
-            )
-        )
-    if not collected:
-        _ingest(vector_search(query, top_k=top_k, log=False))
+
+        # Lexical fallback — no extra embedding call.
+        if not collected:
+            _ingest(fuzzy_text_search(query, top_k=top_k))
+        if not collected and practice_area:
+            _ingest(list_kb_docs(top_k=top_k, practice_area=practice_area))
+        if not collected:
+            _ingest(list_kb_docs(top_k=top_k))
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log("retrieve", f"vector path failed: {type(exc).__name__}: {exc}")
+        try:
+            from db.pgvector_store import list_kb_docs
+
+            _ingest(list_kb_docs(top_k=top_k, practice_area=practice_area))
+            if not collected:
+                _ingest(list_kb_docs(top_k=top_k))
+        except Exception as inner:  # noqa: BLE001
+            if log:
+                log("retrieve", f"list fallback failed: {type(inner).__name__}: {inner}")
 
     collected = collected[:top_k]
     # Compact citations for the UI / LLM message (excerpt truncated for prompt size).
