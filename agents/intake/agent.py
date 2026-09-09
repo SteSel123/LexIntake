@@ -314,11 +314,15 @@ class IntakeAgent(Agent):
                 or getattr(row, "function", None)
                 or ""
             ).lower()
-            payload = parse_tool_payload(
-                getattr(row, "result", None)
-                or getattr(row, "content", None)
-                or getattr(row, "tool_args", None)
-            )
+            # Only accept real tool outputs — never tool_args (inputs look like payloads).
+            raw = getattr(row, "result", None)
+            if raw is None:
+                raw = getattr(row, "content", None)
+            if raw is None:
+                continue
+            payload = parse_tool_payload(raw)
+            if not payload:
+                continue
             if "statute" in name or "sol" in name:
                 result.sol = payload
             elif "conflict" in name:
@@ -330,12 +334,14 @@ class IntakeAgent(Agent):
             elif name in FALLBACK_TOOL_ALIASES or "fallback" in name or "kb_docs" in name:
                 result.web_fallback = payload
 
-        # Merge deterministic results so missing agentic calls still get filled.
+        # Planned tools: deterministic path is the audit source of truth.
+        # Agentic results only fill gaps (avoids incomplete LLM tool rows wiping SOL/estimate).
         det = self._use_tools_deterministic(facts, plan)
-        result.sol = result.sol or det.sol
-        result.conflict = result.conflict or det.conflict
-        result.estimate = result.estimate or det.estimate
-        result.routing = result.routing or det.routing
+        result.sol = det.sol or result.sol
+        result.conflict = det.conflict or result.conflict
+        result.estimate = det.estimate or result.estimate
+        result.routing = det.routing or result.routing
+        result.web_fallback = result.web_fallback or det.web_fallback
 
         metrics = getattr(run_out, "metrics", None)
         if metrics is not None:

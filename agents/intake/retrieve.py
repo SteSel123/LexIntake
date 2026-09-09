@@ -35,22 +35,49 @@ def retrieve(
     collected: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    # One vector search per planned doc_type (sol_rules, past_case, …), then merge.
-    for doc_type in plan.doc_types or [None]:
-        hits = vector_search(
-            query,
-            top_k=top_k,
-            practice_area=practice_area,
-            jurisdiction=facts.jurisdiction,
-            doc_type=doc_type,
-            log=False,
-        )
+    def _ingest(hits: list[dict[str, Any]]) -> None:
         for hit in hits:
             chunk_id = str(hit.get("chunk_id") or "")
             # Dedupe across doc_type queries so the same chunk is not cited twice.
             if chunk_id and chunk_id not in seen:
                 seen.add(chunk_id)
                 collected.append(hit)
+
+    # One vector search per planned doc_type (sol_rules, past_case, …), then merge.
+    for doc_type in plan.doc_types or [None]:
+        _ingest(
+            vector_search(
+                query,
+                top_k=top_k,
+                practice_area=practice_area,
+                jurisdiction=facts.jurisdiction,
+                doc_type=doc_type,
+                log=False,
+            )
+        )
+
+    # Progressively relax filters when metadata is too strict for the seeded KB.
+    if not collected:
+        _ingest(
+            vector_search(
+                query,
+                top_k=top_k,
+                practice_area=practice_area,
+                doc_type=(plan.doc_types or [None])[0],
+                log=False,
+            )
+        )
+    if not collected:
+        _ingest(
+            vector_search(
+                query,
+                top_k=top_k,
+                practice_area=practice_area,
+                log=False,
+            )
+        )
+    if not collected:
+        _ingest(vector_search(query, top_k=top_k, log=False))
 
     collected = collected[:top_k]
     # Compact citations for the UI / LLM message (excerpt truncated for prompt size).

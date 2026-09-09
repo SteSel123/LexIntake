@@ -1,7 +1,13 @@
-"""LLM factory and completion helpers for LexIntake."""
+"""LLM factory and single-shot completion helpers for LexIntake.
+
+Centralizes provider selection (OpenAI, Anthropic, Groq), model alias resolution,
+token usage extraction, and structured/unstructured Agno agent runs. Intake and
+interview agents call these helpers instead of wiring Agno directly.
+"""
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -21,6 +27,14 @@ TModel = TypeVar("TModel", bound=BaseModel)
 _logger = get_console_logger("agents.llm")
 
 
+def _agent_kwargs(**kwargs: Any) -> dict[str, Any]:
+    """Keep only Agent.__init__ kwargs supported by the installed Agno version."""
+    from agno.agent import Agent
+
+    supported = inspect.signature(Agent.__init__).parameters
+    return {key: value for key, value in kwargs.items() if key in supported}
+
+
 def build_model(
     provider: str | None = None,
     model_id: str | None = None,
@@ -29,6 +43,7 @@ def build_model(
     active = (provider or LLM_PROVIDER or "openai").lower()
     model = model_id or LLM_MODEL
 
+    # Friendly config names → provider-specific model IDs
     aliases = {
         "claude-3.5-sonnet": "claude-3-5-sonnet-latest",
         "claude-3-5-sonnet": "claude-3-5-sonnet-latest",
@@ -60,6 +75,7 @@ def build_model(
 
 
 def provider_available(provider: str) -> bool:
+    """Return True when the provider's API key is configured in the environment."""
     p = provider.lower()
     if p == "openai":
         return bool(OPENAI_API_KEY)
@@ -70,6 +86,7 @@ def provider_available(provider: str) -> bool:
     return False
 
 
+# Approximate USD per input/output token for cost telemetry (not billing-accurate)
 COST_RATES = {
     "openai": (0.000002, 0.000008),
     "anthropic": (0.000003, 0.000015),
@@ -79,6 +96,8 @@ COST_RATES = {
 
 @dataclass
 class CompletionResult:
+    """Normalized result from a single LLM call, with optional parsed Pydantic payload."""
+
     content: str
     input_tokens: int = 0
     output_tokens: int = 0
@@ -87,14 +106,17 @@ class CompletionResult:
 
 
 def estimate_cost(provider: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate call cost in USD using rough per-provider token rates."""
     inn, out = COST_RATES.get(provider, COST_RATES["openai"])
     return input_tokens * inn + output_tokens * out
 
 
 def _usage_from_run(run_out: Any, prompt: str, content: Any) -> tuple[int, int, int]:
+    """Extract token counts from Agno run output, with char-length fallback when missing."""
     metrics = getattr(run_out, "metrics", None)
     in_tok = int(getattr(metrics, "input_tokens", None) or getattr(run_out, "input_tokens", None) or 0)
     out_tok = int(getattr(metrics, "output_tokens", None) or getattr(run_out, "output_tokens", None) or 0)
+    # Some providers omit usage metadata; approximate ~4 chars per token
     if in_tok == 0 and out_tok == 0:
         in_tok = max(1, len(prompt) // 4)
         out_tok = max(1, len(str(content or "")) // 4)
@@ -103,6 +125,7 @@ def _usage_from_run(run_out: Any, prompt: str, content: Any) -> tuple[int, int, 
 
 
 def _parse_structured(content: Any, output_schema: type[TModel]) -> TModel | None:
+    """Coerce Agno response content into a Pydantic model; return None on failure."""
     if content is None:
         return None
     try:
@@ -129,20 +152,23 @@ def complete_structured(
     name: str = "LexIntake Structured",
 ) -> CompletionResult:
     """Single-shot Agno run with a Pydantic ``output_schema``."""
+    # Graceful no-op when LLM is disabled (tests or missing credentials)
     if not model:
         return CompletionResult(content="")
     from agno.agent import Agent
 
     agent = Agent(
-        name=name,
-        model=model,
-        instructions=system,
-        output_schema=output_schema,
-        structured_outputs=True,
-        parse_response=True,
-        markdown=False,
-        reasoning=False,
-        telemetry=False,
+        **_agent_kwargs(
+            name=name,
+            model=model,
+            instructions=system,
+            output_schema=output_schema,
+            structured_outputs=True,
+            parse_response=True,
+            markdown=False,
+            reasoning=False,
+            telemetry=False,
+        )
     )
     run_out = agent.run(prompt, output_schema=output_schema)
     parsed = _parse_structured(getattr(run_out, "content", None), output_schema)
@@ -164,12 +190,14 @@ def complete(model: Any, prompt: str, *, system: str | None = None) -> Completio
     from agno.agent import Agent
 
     agent = Agent(
-        name="LexIntake Complete",
-        model=model,
-        instructions=system,
-        markdown=False,
-        reasoning=False,
-        telemetry=False,
+        **_agent_kwargs(
+            name="LexIntake Complete",
+            model=model,
+            instructions=system,
+            markdown=False,
+            reasoning=False,
+            telemetry=False,
+        )
     )
     run_out = agent.run(prompt)
     content = getattr(run_out, "content", None) or ""
