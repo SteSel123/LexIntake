@@ -56,12 +56,13 @@ def ensure_kb_docs(
     engine: Engine | None = None,
     *,
     dimensions: int = DEFAULT_EMBEDDING_DIMS,
-    recreate_on_dim_mismatch: bool = True,
+    recreate_on_dim_mismatch: bool = False,
 ) -> Engine:
     """
     Ensure Postgres extensions + kb_docs table exist.
 
     Returns the SQLAlchemy engine (kb_docs is ensured as a side effect).
+    Recreate-on-dim-mismatch is opt-in (ETL only) so read paths never wipe data.
     """
     eng = engine or get_engine()
     ensure_postgres_extensions(eng)
@@ -160,7 +161,7 @@ def ensure_kb_docs(
 
 def count_rows(engine: Engine | None = None) -> int:
     """Return total rows in ``kb_docs`` (table must exist or is created first)."""
-    eng = engine or ensure_kb_docs()
+    eng = engine or ensure_kb_docs(recreate_on_dim_mismatch=False)
     with eng.connect() as conn:
         return int(conn.execute(text("SELECT COUNT(*) FROM kb_docs")).scalar() or 0)
 
