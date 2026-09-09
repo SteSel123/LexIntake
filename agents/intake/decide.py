@@ -1,4 +1,9 @@
-"""Intake-phase decision: delegates scoring to score_lead (single source of truth)."""
+"""
+Intake-phase decision: delegates scoring to score_lead (single source of truth).
+
+Turns tool outputs + facts into a DecisionResult used by respond / self_check:
+lead_score, case_viability, routing text, next_steps, and a heuristic confidence.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ def _derive_next_steps(
     tools: ToolPhaseResult,
     scored_decision: str,
 ) -> list[str]:
+    """Build operational follow-ups from SOL / conflict / estimate / routing / plan gaps."""
     steps: list[str] = []
     sol = tools.sol or {}
     conflict = tools.conflict or {}
@@ -61,6 +67,7 @@ def _derive_next_steps(
 
 
 def _map_viability(decision: str) -> Literal["viable", "not_viable", "needs_review"]:
+    """Map score_lead decision labels onto IntakeResponse case_viability values."""
     if decision == "SCHEDULE_CONSULT":
         return "viable"
     if decision == "REJECT":
@@ -74,6 +81,11 @@ def _estimate_confidence(
     tools: ToolPhaseResult,
     plan: PlanResult,
 ) -> float:
+    """
+    Heuristic 0..1 confidence for escalation.
+
+    Boosts for citations, tool results, and high lead scores; penalizes missing fields.
+    """
     confidence = CONFIDENCE_BASE
     if retrieval.citations:
         confidence += CONFIDENCE_CITATION_BOOST
@@ -96,7 +108,12 @@ def decide(
     confidence_threshold: float,
     narrative: str | None = None,
 ) -> DecisionResult:
-    """Map canonical score_lead output to agent DecisionResult."""
+    """
+    Map canonical score_lead output to agent DecisionResult.
+
+    confidence_threshold is intentionally unused here (self_check / respond escalate
+    on low confidence); lead-score cutoffs live in scoring/constants.
+    """
     del confidence_threshold  # used by self_check; scoring thresholds are in scoring/constants
     ctx = build_lead_score_context(facts, plan, retrieval, tools, narrative=narrative)
     scored = score_lead(ctx)

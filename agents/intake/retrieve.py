@@ -1,4 +1,9 @@
-"""KB retrieval for the intake agent (PostgreSQL + pgvector)."""
+"""
+KB retrieval for the intake agent (PostgreSQL + pgvector).
+
+Searches `kb_docs` per planned doc_type, dedupes chunks, and builds short
+citations for the screening message / self-check.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +20,11 @@ def retrieve(
     top_k: int,
     log: Callable[[str, str], None] | None = None,
 ) -> RetrieveResult:
-    """Query kb_docs with metadata filters; return top-k chunks."""
+    """
+    Query kb_docs with metadata filters; return top-k chunks + citations.
+
+    Skips entirely when `plan.need_retrieval` is False (incomplete / no query signal).
+    """
     if not plan.need_retrieval:
         if log:
             log("retrieve", "skipped (not needed)")
@@ -26,6 +35,7 @@ def retrieve(
     collected: list[dict[str, Any]] = []
     seen: set[str] = set()
 
+    # One vector search per planned doc_type (sol_rules, past_case, …), then merge.
     for doc_type in plan.doc_types or [None]:
         hits = vector_search(
             query,
@@ -37,11 +47,13 @@ def retrieve(
         )
         for hit in hits:
             chunk_id = str(hit.get("chunk_id") or "")
+            # Dedupe across doc_type queries so the same chunk is not cited twice.
             if chunk_id and chunk_id not in seen:
                 seen.add(chunk_id)
                 collected.append(hit)
 
     collected = collected[:top_k]
+    # Compact citations for the UI / LLM message (excerpt truncated for prompt size).
     citations = [
         KBCitation(
             chunk_id=str(hit.get("chunk_id") or "unknown"),

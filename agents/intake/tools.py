@@ -1,4 +1,9 @@
-"""Agno tools available to the intake agent."""
+"""
+Agno tools available to the intake agent.
+
+`TOOLS` is registered on the Agno Agent for the agentic path.
+`run_deterministic` calls the same tools from `plan.tools_to_call` without an LLM.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from tools.kb_docs_fallback import (
 )
 from tools.route_lead import RouteLeadInput, route_lead
 
+# Functions Agno may invoke when tool_choice=auto.
 TOOLS = [
     check_statute_of_limitations,
     conflict_check,
@@ -28,6 +34,7 @@ TOOLS = [
     kb_docs_fallback,
 ]
 
+# Whitelist used when the LLM proposes tools during plan refine.
 ALLOWED_TOOL_NAMES = frozenset(
     {
         "check_statute_of_limitations",
@@ -40,6 +47,7 @@ ALLOWED_TOOL_NAMES = frozenset(
 
 
 def parse_tool_payload(value: Any) -> dict[str, Any]:
+    """Normalize tool return values (Pydantic / dict / JSON string) into a plain dict."""
     if value is None:
         return {}
     if hasattr(value, "model_dump"):
@@ -61,7 +69,12 @@ def run_deterministic(
     *,
     log: Callable[[str], None] | None = None,
 ) -> Any:
-    """Invoke planned Agno tools and merge outputs."""
+    """
+    Invoke planned tools in fixed order and merge into ToolPhaseResult.
+
+    Used as the non-LLM path and as a fill-in after agentic tool runs.
+    Errors are logged but do not raise — intake continues with partial results.
+    """
     from agents.intake.models import ToolPhaseResult
 
     result = ToolPhaseResult()
@@ -72,6 +85,7 @@ def run_deterministic(
             log(detail)
 
     try:
+        # Statute of limitations — needs jurisdiction, case type, and incident date.
         if "check_statute_of_limitations" in plan.tools_to_call and facts.incident_date:
             sol = check_statute_of_limitations.entrypoint(
                 CheckSOLInput(
@@ -83,6 +97,7 @@ def run_deterministic(
             result.sol = parse_tool_payload(sol)
             _log(f"SOL={result.sol}")
 
+        # Conflict of interest — client name vs opposing party.
         if "conflict_check" in plan.tools_to_call and facts.name:
             conflict = conflict_check.entrypoint(
                 ConflictCheckInput(
@@ -93,6 +108,7 @@ def run_deterministic(
             result.conflict = parse_tool_payload(conflict)
             _log(f"conflict={result.conflict.get('conflict')}")
 
+        # Settlement / damages range from comparable cases.
         if "estimate_case_value" in plan.tools_to_call and facts.damages is not None:
             estimate = estimate_case_value.entrypoint(
                 EstimateCaseValueInput(
@@ -104,6 +120,7 @@ def run_deterministic(
             result.estimate = parse_tool_payload(estimate)
             _log(f"estimate={result.estimate.get('estimate')}")
 
+        # Assign an attorney / queue by practice area.
         if "route_lead" in plan.tools_to_call:
             routing = route_lead.entrypoint(
                 RouteLeadInput(
@@ -114,6 +131,7 @@ def run_deterministic(
             result.routing = parse_tool_payload(routing)
             _log(f"routing={result.routing.get('attorney_name')}")
 
+        # Broad KB lookup when practice area is unknown (aliases share one tool).
         planned_fallback = FALLBACK_TOOL_ALIASES.intersection(plan.tools_to_call or [])
         if planned_fallback:
             fallback = kb_docs_fallback.entrypoint(
