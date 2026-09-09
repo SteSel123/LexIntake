@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LexIntake</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <h1 class="brand">LexIntake</h1>
+      <p class="tagline">Agentic intake screening for law firms</p>
+      <div class="disclaimer"><strong>Disclaimer:</strong> This is not legal advice. Consult a licensed attorney.</div>
+    </header>
+
+    <p id="api-status" class="api-status" hidden></p>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="interview" role="tab" aria-selected="true">Interview (multi-turn)</button>
+      <button type="button" class="tab" data-tab="quick" role="tab" aria-selected="false">Quick analysis</button>
+    </nav>
+
+    <section id="panel-interview" class="panel" role="tabpanel">
+      <h2>Prospective client interview</h2>
+      <p class="muted">Multi-turn intake: the agent asks follow-up questions, then screens the lead.</p>
+      <div class="row">
+        <button type="button" id="restart-interview" class="btn secondary">Restart interview</button>
+      </div>
+      <div id="chat" class="chat" aria-live="polite"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Answer the agent’s question or describe your matter…" autocomplete="off" required />
+        <button type="submit" class="btn primary">Send</button>
+      </form>
+      <div id="interview-result" class="result" hidden></div>
+    </section>
+
+    <section id="panel-quick" class="panel" role="tabpanel" hidden>
+      <label for="case-description"><strong>Case description</strong></label>
+      <textarea id="case-description" rows="7" placeholder="Example: Rear-end collision in CA, clear liability, $45k damages, incident 6 months ago."></textarea>
+      <div class="row examples">
+        <label for="example-select">Demo scenarios</label>
+        <select id="example-select">
+          <option value="">(custom)</option>
+          <option value="Valid Personal Injury">Valid Personal Injury</option>
+          <option value="SOL Expired">SOL Expired</option>
+          <option value="Conflict Case">Conflict Case</option>
+          <option value="Uncertain / Review">Uncertain / Review</option>
+        </select>
+        <button type="button" id="insert-example" class="btn secondary">Insert example</button>
+      </div>
+      <button type="button" id="run-analysis" class="btn primary">Run Intake Analysis</button>
+      <p id="quick-error" class="error" hidden></p>
+      <div id="quick-result" class="result" hidden></div>
+    </section>
+
+    <footer class="footer">LexIntake demo UI · screening only · not a substitute for counsel</footer>
+  </main>
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

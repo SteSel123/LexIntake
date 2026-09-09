@@ -1,0 +1,229 @@
+:root {
+  --ink: #14212b;
+  --muted: #5b6b75;
+  --paper: #f3efe6;
+  --panel: #fffdf8;
+  --line: #d7d0c3;
+  --accent: #0f6a5c;
+  --accent-2: #c45c26;
+  --danger: #8b2e2e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Source Sans 3", sans-serif;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #e7f2ef 0%, transparent 55%),
+    linear-gradient(180deg, #f7f3ea 0%, #efe8da 100%);
+  min-height: 100vh;
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.brand {
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(2.4rem, 6vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.tagline {
+  margin: 0.55rem 0 0.2rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.disclaimer {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-left: 4px solid var(--accent);
+  padding: 0.85rem 1rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.api-status {
+  background: #f8e8e4;
+  border: 1px solid #e2b4a8;
+  color: var(--danger);
+  padding: 0.75rem 1rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.25rem 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+}
+
+.muted { color: var(--muted); }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  margin: 0.75rem 0 1rem;
+}
+
+.examples label { color: var(--muted); }
+
+textarea, input[type="text"], select {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+}
+
+textarea { resize: vertical; margin: 0.5rem 0 0.75rem; }
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.btn:disabled { opacity: 0.55; cursor: wait; }
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn.secondary {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 220px;
+  margin-bottom: 0.85rem;
+}
+
+.bubble {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  max-width: 92%;
+  white-space: pre-wrap;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  border-color: #b9d4ce;
+  background: #eef6f4;
+}
+
+.bubble.assistant { align-self: flex-start; }
+
+.chat-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.65rem;
+}
+
+.error {
+  color: var(--danger);
+  margin-top: 0.75rem;
+}
+
+.result {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.metric {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.metric strong {
+  font-size: 1.15rem;
+}
+
+.escalate {
+  background: #f8e8e4;
+  border: 1px solid #e2b4a8;
+  color: var(--danger);
+  font-weight: 700;
+  padding: 0.85rem 1rem;
+  margin: 0.5rem 0 1rem;
+}
+
+pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.85rem;
+  overflow: auto;
+  font-size: 0.9rem;
+}
+
+.footer {
+  margin-top: 2rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 700px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chat-form { grid-template-columns: 1fr; }
+}
