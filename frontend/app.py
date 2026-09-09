@@ -1,23 +1,18 @@
-"""LexIntake Streamlit UI — multi-turn interview + quick analysis."""
+"""LexIntake frontend (Streamlit) — multi-turn interview + quick analysis."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import streamlit as st
 
-UI_DIR = Path(__file__).resolve().parent
-ROOT = UI_DIR.parent
-for path in (str(ROOT), str(UI_DIR), str(ROOT / "agents")):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from components.disclaimer import render_disclaimer
-from components.footer import render_footer
-from components.header import render_header
-from components.result_viewer import render_results
-from runner import LEGAL_DISCLAIMER, build_result_payload, run_intake_analysis
+from backend.services.intake_service import (
+    LEGAL_DISCLAIMER,
+    finalize_screening_payload,
+    run_intake_analysis,
+)
+from frontend.components.disclaimer import render_disclaimer
+from frontend.components.footer import render_footer
+from frontend.components.header import render_header
+from frontend.components.result_viewer import render_results
 
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap');
@@ -182,11 +177,9 @@ def _render_interview_tab() -> None:
     if turn.done and turn.screening is not None:
         st.session_state["interview_done"] = True
         narrative = turn.facts.narrative or prompt
-        payload = build_result_payload(turn.screening, turn.facts, narrative)
-        payload["latency_ms"] = float(getattr(turn.screening, "latency_ms", 0) or 0)
-        payload["cost"] = float(getattr(turn.screening, "cost", 0) or 0)
-        payload["parsed_facts"] = turn.facts.model_dump()
-        st.session_state["interview_result"] = payload
+        st.session_state["interview_result"] = finalize_screening_payload(
+            turn.screening, turn.facts, narrative
+        )
     st.rerun()
 
 
@@ -244,10 +237,11 @@ def main() -> None:
         from config import OPENAI_API_KEY
 
         if not OPENAI_API_KEY:
-            st.warning(
-                "OPENAI_API_KEY is empty in `.env`. "
-                "Set a new key for live embeddings/LLM; offline hash/deterministic still works for demos."
+            st.error(
+                "OPENAI_API_KEY is missing in `.env`. "
+                "Copy `.env.example` to `.env` and set a live API key before running intake."
             )
+            st.stop()
     except Exception:  # noqa: BLE001
         pass
 

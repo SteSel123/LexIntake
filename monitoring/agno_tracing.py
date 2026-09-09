@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +23,7 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
     Enable Agno OpenTelemetry tracing once per process.
 
     Stores spans in monitoring/traces.db (local Agno Monitoring).
-    Disable with LEXINTAKE_AGNO_TRACING=0 (used by offline CI).
+    Disable with LEXINTAKE_AGNO_TRACING=0.
     """
     global _ENABLED, _TRACE_DB
     if _ENABLED and not force:
@@ -34,13 +33,6 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
     if flag in {"0", "false", "no", "off"}:
         logger.info("Agno tracing disabled via LEXINTAKE_AGNO_TRACING")
         return False
-
-    # Skip in pure offline/hash CI unless explicitly forced.
-    provider = (os.getenv("LEXINTAKE_LLM_PROVIDER") or "").lower()
-    if provider in {"local", "deterministic", "hash", "none"} and not force:
-        if os.getenv("LEXINTAKE_FORCE_AGNO_TRACING", "").lower() not in {"1", "true", "yes"}:
-            logger.info("Agno tracing skipped for deterministic provider=%s", provider)
-            return False
 
     try:
         from agno.db.sqlite import SqliteDb
@@ -107,7 +99,5 @@ def recent_traces(limit: int = 20) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
     ok = enable_agno_monitoring(force=True)
     print(f"enabled={ok} db={TRACES_DB} exists={TRACES_DB.exists()}")

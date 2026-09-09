@@ -10,7 +10,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from agents.intake.agent import IntakeAgent, build_default_agent
-from agents.intake.constants import LEGAL_DISCLAIMER, UNCERTAINTY_ESCALATION
+from agents.intake.constants import (
+    INTERVIEW_PROSPECT_NAME,
+    LEGAL_DISCLAIMER,
+    SENTINEL_NAME,
+    SENTINEL_PARTY,
+    UNCERTAINTY_ESCALATION,
+)
 from agents.intake.models import IntakeFacts, IntakeResponse
 from agents.prompts import load_prompts
 
@@ -62,16 +68,12 @@ class InterviewSession:
         missing: list[str] = []
         for key in REQUIRED_FIELDS:
             val = values.get(key)
-            if val in (None, "", [], "Unknown Party", "Demo Prospect"):
-                # Keep Demo Prospect as incomplete for interview mode
-                if key == "name" and val == "Demo Prospect":
-                    missing.append(key)
-                elif key == "opposing_party" and val in (None, "", "Unknown Party"):
-                    missing.append(key)
-                elif key not in {"name", "opposing_party"} and val in (None, "", []):
-                    missing.append(key)
-                elif key == "name" and not val:
-                    missing.append(key)
+            if key == "name" and (not val or val == SENTINEL_NAME):
+                missing.append(key)
+            elif key == "opposing_party" and (not val or val == SENTINEL_PARTY):
+                missing.append(key)
+            elif key not in {"name", "opposing_party"} and val in (None, "", []):
+                missing.append(key)
         return missing
 
     def start(self) -> InterviewTurnResult:
@@ -91,7 +93,7 @@ class InterviewSession:
         )
 
     def _merge_text_into_facts(self, text: str) -> None:
-        """Heuristic extraction from free-text answers (works offline)."""
+        """Heuristic extraction from free-text answers, then LLM field fill."""
         from agents.intake.fact_parse import parse_case_description
 
         # Prefer incremental field fills when answering a specific prompt.
@@ -142,14 +144,14 @@ class InterviewSession:
             self.facts.incident_date = parsed.incident_date
         if self.facts.damages is None and parsed.damages is not None:
             self.facts.damages = parsed.damages
-        if (not self.facts.name or self.facts.name == "Demo Prospect") and parsed.name not in (
+        if (not self.facts.name or self.facts.name == SENTINEL_NAME) and parsed.name not in (
             None,
-            "Demo Prospect",
+            SENTINEL_NAME,
         ):
             self.facts.name = parsed.name
         if (
-            not self.facts.opposing_party or self.facts.opposing_party == "Unknown Party"
-        ) and parsed.opposing_party not in (None, "Unknown Party"):
+            not self.facts.opposing_party or self.facts.opposing_party == SENTINEL_PARTY
+        ) and parsed.opposing_party not in (None, SENTINEL_PARTY):
             self.facts.opposing_party = parsed.opposing_party
 
         narrative = (self.facts.narrative or "").strip()
@@ -159,10 +161,9 @@ class InterviewSession:
         if parsed.priority:
             self.facts.priority = parsed.priority
 
-        # LLM optional extraction when available
+        # LLM extraction on top of heuristics
         assert self.agent is not None
-        if self.agent.llm_ready:
-            self._llm_extract_fields(cleaned)
+        self._llm_extract_fields(cleaned)
 
     def _llm_extract_fields(self, text: str) -> None:
         assert self.agent is not None
@@ -171,11 +172,15 @@ class InterviewSession:
             facts=self.facts.model_dump_json(),
             text=text,
         )
-        raw = self.agent._complete(prompt, system=PROMPTS.text("extract_system"))
-        from agents.llm import parse_json_object
+        from agents.intake.models import ExtractedIntakeFields
 
-        data = parse_json_object(raw)
-        if not data:
+        extracted = self.agent.complete_structured(
+            prompt,
+            ExtractedIntakeFields,
+            system=PROMPTS.text("extract_system"),
+            name="LexIntake Interview Extract",
+        )
+        if not isinstance(extracted, ExtractedIntakeFields):
             return
         for key in (
             "name",
@@ -185,16 +190,13 @@ class InterviewSession:
             "incident_date",
             "severity",
         ):
-            val = data.get(key)
+            val = getattr(extracted, key)
             if val not in (None, ""):
                 setattr(self.facts, key, val)
                 if key == "practice_area":
                     self.facts.case_type = str(val)
-        if data.get("damages") is not None:
-            try:
-                self.facts.damages = int(data["damages"])
-            except (TypeError, ValueError):
-                pass
+        if extracted.damages is not None:
+            self.facts.damages = int(extracted.damages)
 
     def _questions_message(self, missing: list[str]) -> str:
         asks = missing[: self.max_questions_per_turn]
@@ -241,10 +243,14 @@ class InterviewSession:
         # Enough information — run full screening pipeline
         self.phase = "screening"
         assert self.agent is not None
-        if not self.facts.name or self.facts.name == "Demo Prospect":
-            self.facts.name = self.facts.name if self.facts.name and self.facts.name != "Demo Prospect" else "Interview Prospect"
-        if not self.facts.opposing_party or self.facts.opposing_party == "Unknown Party":
-            self.facts.opposing_party = self.facts.opposing_party or "Unknown Party"
+        if not self.facts.name or self.facts.name == SENTINEL_NAME:
+            self.facts.name = (
+                self.facts.name
+                if self.facts.name and self.facts.name != SENTINEL_NAME
+                else INTERVIEW_PROSPECT_NAME
+            )
+        if not self.facts.opposing_party or self.facts.opposing_party == SENTINEL_PARTY:
+            self.facts.opposing_party = self.facts.opposing_party or SENTINEL_PARTY
 
         screening = self.agent.run_intake(self.facts)
         self.phase = "done"

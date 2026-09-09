@@ -33,6 +33,43 @@ class PlanResult(BaseModel):
     reasoning: str = ""
 
 
+class PlanRefineOutput(BaseModel):
+    """Agno structured output for LLM plan refinement."""
+
+    tools_to_call: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tools to call from: check_statute_of_limitations, conflict_check, "
+            "estimate_case_value, route_lead, kb_docs_fallback"
+        ),
+    )
+    retrieval_query: str = Field(default="", description="Semantic search query for the KB")
+    doc_types: list[str] = Field(
+        default_factory=list,
+        description="KB doc types such as sol_rules, past_case, acceptance_criteria, faq",
+    )
+    escalate: bool = Field(default=False, description="True when key facts are missing or ambiguous")
+    reasoning: str = Field(default="", description="Short rationale for the refined plan")
+
+
+class ScreeningMessage(BaseModel):
+    """Agno structured output for the staff-facing screening narrative."""
+
+    message: str = Field(..., description="Concise screening summary for intake staff")
+
+
+class ExtractedIntakeFields(BaseModel):
+    """Agno structured output for interview field extraction."""
+
+    name: str | None = Field(default=None, description="Prospect full name")
+    opposing_party: str | None = Field(default=None, description="Opposing or at-fault party")
+    practice_area: str | None = Field(default=None, description="Legal practice area")
+    jurisdiction: str | None = Field(default=None, description="US state code, e.g. CA")
+    incident_date: str | None = Field(default=None, description="Incident date YYYY-MM-DD when known")
+    damages: int | None = Field(default=None, description="Estimated damages in USD")
+    severity: str | None = Field(default=None, description="low, medium, or high")
+
+
 class KBCitation(BaseModel):
     chunk_id: str
     practice_area: str = ""

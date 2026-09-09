@@ -2,25 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import re
-import sys
 import time as _time
 from contextlib import contextmanager
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, Iterator
 
-ROOT = Path(__file__).resolve().parent.parent
-KB_DIR = ROOT / "kb"
-DB_DIR = ROOT / "db"
-ETL_DIR = ROOT / "etl"
-
-for path in (str(ROOT), str(DB_DIR), str(ETL_DIR)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from monitoring.app_logging import get_console_logger  # noqa: E402
+from monitoring.app_logging import get_console_logger, log_optional_failure
 
 logger = get_console_logger("tools")
 
@@ -30,6 +17,55 @@ _MONTHS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*months?", re.I)
 _DAYS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*days?", re.I)
 _NO_SOL_RE = re.compile(r"\bno\s+sol\b|\bno\s+single\s+sol\b", re.I)
 
+# Slug aliases for match_practice_area (case_type → KB practice area name).
+PRACTICE_AREA_ALIASES: dict[str, str] = {
+    "pi": "Personal Injury",
+    "personal_injury": "Personal Injury",
+    "auto_accident": "Personal Injury",
+    "car_accident": "Personal Injury",
+    "employment": "Employment Law",
+    "wrongful_termination": "Employment Law",
+    "wage": "Employment Law",
+    "workers_comp": "Workers’ Compensation",
+    "workers_compensation": "Workers’ Compensation",
+    "med_mal": "Medical Malpractice",
+    "medical_malpractice": "Medical Malpractice",
+    "product": "Product Liability",
+    "products": "Product Liability",
+    "criminal": "Criminal Defense",
+    "dui": "Criminal Defense",
+    "family": "Family Law",
+    "divorce": "Family Law",
+    "custody": "Family Law",
+    "immigration": "Immigration",
+    "asylum": "Immigration",
+    "civil_rights": "Civil Rights",
+    "consumer": "Consumer Protection",
+    "fdcpa": "Consumer Protection",
+}
+
+# Phrase hints for free-text narrative parsing (substring → practice area).
+PRACTICE_TEXT_HINTS: tuple[tuple[str, str], ...] = (
+    ("personal injury", "Personal Injury"),
+    ("rear-end", "Personal Injury"),
+    ("slip-and-fall", "Personal Injury"),
+    ("slip and fall", "Personal Injury"),
+    ("collision", "Personal Injury"),
+    ("employment", "Employment Law"),
+    ("discrimination", "Employment Law"),
+    ("immigration", "Immigration"),
+    ("asylum", "Immigration"),
+    ("family", "Family Law"),
+    ("custody", "Family Law"),
+    ("divorce", "Family Law"),
+    ("workers", "Workers’ Compensation"),
+    ("malpractice", "Medical Malpractice"),
+    ("product", "Product Liability"),
+    ("civil rights", "Civil Rights"),
+    ("consumer", "Consumer Protection"),
+    ("criminal", "Criminal Defense"),
+)
+
 
 def slugify(value: str | None) -> str:
     if not value:
@@ -37,23 +73,47 @@ def slugify(value: str | None) -> str:
     return _SLUG_RE.sub("_", value.strip().lower()).strip("_")
 
 
-@lru_cache(maxsize=16)
-def load_kb_json(filename: str) -> Any:
-    path = KB_DIR / filename
-    if not path.exists():
-        logger.error("KB file missing: %s", path)
-        return None
+def attorney_key(name: str | None, *, max_len: int = 80) -> str:
+    """Sanitize attorney display name for metrics / logging keys."""
+    raw = "".join(ch if ch.isalnum() else "_" for ch in str(name or "").lower())
+    return raw[:max_len]
+
+
+def query_structured(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Run a read query against PostgreSQL structured tables."""
     try:
-        with path.open(encoding="utf-8") as f:
-            return json.load(f)
+        from db.structured_db import query_rows
+
+        return query_rows(sql, params)
     except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to read KB file %s: %s", path, exc)
-        return None
+        logger.error("Structured query failed: %s", exc)
+        return []
 
 
 def load_practice_areas() -> list[str]:
-    data = load_kb_json("practice_areas.json")
-    return list(data) if isinstance(data, list) else []
+    """Load practice area names from Postgres (seeded from kb/practice_areas.json)."""
+    rows = query_structured("SELECT name FROM practice_areas ORDER BY name")
+    return [str(r["name"]) for r in rows if r.get("name")]
+
+
+def load_acceptance_criteria(practice_area: str | None) -> dict[str, Any] | None:
+    """Load acceptance payload for one practice area from Postgres."""
+    if not practice_area:
+        return None
+    rows = query_structured(
+        "SELECT payload FROM acceptance_criteria WHERE practice_area = :area",
+        {"area": practice_area},
+    )
+    if rows and isinstance(rows[0].get("payload"), dict):
+        return rows[0]["payload"]
+    all_rows = query_structured("SELECT practice_area, payload FROM acceptance_criteria")
+    needle = slugify(practice_area)
+    for row in all_rows:
+        if slugify(str(row.get("practice_area") or "")) == needle and isinstance(
+            row.get("payload"), dict
+        ):
+            return row["payload"]
+    return None
 
 
 def match_practice_area(case_type: str) -> str | None:
@@ -65,46 +125,18 @@ def match_practice_area(case_type: str) -> str | None:
     if not needle:
         return None
 
-    # Exact slug match
     for area in areas:
         if slugify(area) == needle:
             return area
 
-    # Alias / containment match
-    aliases = {
-        "pi": "Personal Injury",
-        "personal_injury": "Personal Injury",
-        "auto_accident": "Personal Injury",
-        "car_accident": "Personal Injury",
-        "employment": "Employment Law",
-        "wrongful_termination": "Employment Law",
-        "wage": "Employment Law",
-        "workers_comp": "Workers’ Compensation",
-        "workers_compensation": "Workers’ Compensation",
-        "med_mal": "Medical Malpractice",
-        "medical_malpractice": "Medical Malpractice",
-        "product": "Product Liability",
-        "products": "Product Liability",
-        "criminal": "Criminal Defense",
-        "dui": "Criminal Defense",
-        "family": "Family Law",
-        "divorce": "Family Law",
-        "custody": "Family Law",
-        "immigration": "Immigration",
-        "asylum": "Immigration",
-        "civil_rights": "Civil Rights",
-        "consumer": "Consumer Protection",
-        "fdcpa": "Consumer Protection",
-    }
-    if needle in aliases:
-        return aliases[needle]
+    if needle in PRACTICE_AREA_ALIASES:
+        return PRACTICE_AREA_ALIASES[needle]
 
     for area in areas:
         area_slug = slugify(area)
         if needle in area_slug or area_slug in needle:
             return area
 
-    # Token overlap score
     best: tuple[int, str] | None = None
     needle_tokens = set(needle.split("_"))
     for area in areas:
@@ -142,37 +174,29 @@ def parse_sol_duration_days(rule_text: str) -> tuple[int | None, bool]:
 
 
 def lookup_sol_rule(practice_area: str, jurisdiction: str) -> str | None:
-    tables = load_kb_json("sol_tables.json")
-    if not isinstance(tables, dict):
-        return None
-    area_rules = tables.get(practice_area)
-    if not isinstance(area_rules, dict):
-        # try fuzzy area key
-        for key, value in tables.items():
-            if slugify(key) == slugify(practice_area):
-                area_rules = value
-                break
-    if not isinstance(area_rules, dict):
-        return None
+    """Lookup SOL rule text from Postgres sol_rules (seeded from kb/sol_tables.json)."""
     jur = jurisdiction.strip().upper()
-    if jur in area_rules:
-        return str(area_rules[jur])
-    for key, value in area_rules.items():
-        if slugify(key) == slugify(jur):
-            return str(value)
+    rows = query_structured(
+        """
+        SELECT rule_text
+        FROM sol_rules
+        WHERE practice_area = :area AND jurisdiction = :jur
+        LIMIT 1
+        """,
+        {"area": practice_area, "jur": jur},
+    )
+    if rows:
+        return str(rows[0].get("rule_text") or "") or None
+
+    all_rows = query_structured(
+        "SELECT practice_area, jurisdiction, rule_text FROM sol_rules WHERE jurisdiction = :jur",
+        {"jur": jur},
+    )
+    needle = slugify(practice_area)
+    for row in all_rows:
+        if slugify(str(row.get("practice_area") or "")) == needle:
+            return str(row.get("rule_text") or "") or None
     return None
-
-
-def get_sqlite_connection():
-    try:
-        from sqlite_db import connect, init_schema
-
-        conn = connect()
-        init_schema(conn)
-        return conn
-    except Exception as exc:  # noqa: BLE001
-        logger.error("SQLite connection failed: %s", exc)
-        return None
 
 
 def vector_search(
@@ -184,10 +208,10 @@ def vector_search(
     *,
     log: bool = True,
 ) -> list[dict[str, Any]]:
-    """Search LanceDB kb_docs; returns [] on any failure."""
+    """Search PostgreSQL kb_docs (pgvector); returns [] on any failure."""
     try:
+        from db.pgvector_store import count_rows, search_kb_docs
         from etl.transform.embeddings import get_embedder
-        from lancedb_store import ensure_kb_docs, search_kb_docs
 
         embedder = get_embedder()
         vector = embedder.embed([query])[0]
@@ -200,23 +224,22 @@ def vector_search(
         )
         if log:
             try:
-                table = ensure_kb_docs(dimensions=len(vector))
-                total = int(table.count_rows())
+                total = count_rows()
                 from monitoring.logger import log_retrieval
 
                 log_retrieval(query, hits=len(hits), total_chunks=total)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log_optional_failure(logger, "retrieval metrics", exc)
         return hits
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Vector search failed: %s", exc)
+    except (ImportError, RuntimeError, ValueError, OSError) as exc:
+        logger.warning("Vector search unavailable: %s: %s", type(exc).__name__, exc)
         if log:
             try:
                 from monitoring.logger import log_retrieval
 
                 log_retrieval(query, hits=0, total_chunks=0)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log_optional_failure(logger, "empty retrieval metrics", exc)
         return []
 
 
@@ -235,5 +258,5 @@ def tool_timer(tool_name: str) -> Iterator[None]:
             from monitoring.logger import log_tool_call
 
             log_tool_call(tool_name, success, (_time.perf_counter() - start) * 1000.0)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log_optional_failure(logger, f"tool_timer({tool_name})", exc)

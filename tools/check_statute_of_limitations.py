@@ -1,4 +1,4 @@
-"""Agno tool: check statute of limitations from KB sol_tables.json."""
+"""Agno tool: check statute of limitations from Postgres sol_rules."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import logger, lookup_sol_rule, match_practice_area, parse_sol_duration_days, tool_timer
+from tools.common import logger, lookup_sol_rule, match_practice_area, parse_sol_duration_days, tool_timer
 
 
 class CheckSOLInput(BaseModel):
@@ -41,7 +41,7 @@ def _today() -> date:
     ),
 )
 def check_statute_of_limitations(payload: CheckSOLInput) -> CheckSOLOutput:
-    """Check SOL validity against kb/sol_tables.json (deterministic)."""
+    """Check SOL validity against Postgres sol_rules (seeded from kb/sol_tables.json)."""
     with tool_timer("check_statute_of_limitations"):
         return _check_statute_of_limitations_impl(payload)
 

@@ -1,18 +1,9 @@
-"""Generate embeddings for chunked KB documents (OpenAI or hash fallback)."""
+"""Generate embeddings for chunked KB documents (OpenAI)."""
 
 from __future__ import annotations
 
-import hashlib
-import math
 import os
-import re
-import sys
-from pathlib import Path
 from typing import Any, Protocol
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 try:
     from config import (
@@ -23,9 +14,9 @@ try:
         require_openai_api_key,
     )
 except ImportError:  # pragma: no cover
-    EMBED_PROVIDER = os.getenv("LEXINTAKE_EMBEDDING_PROVIDER", "hash")
-    EMBED_MODEL = os.getenv("LEXINTAKE_EMBEDDING_MODEL", "hash-v1")
-    EMBED_DIMS = int(os.getenv("LEXINTAKE_EMBEDDING_DIMS", "256"))
+    EMBED_PROVIDER = os.getenv("LEXINTAKE_EMBEDDING_PROVIDER", "openai")
+    EMBED_MODEL = os.getenv("LEXINTAKE_EMBEDDING_MODEL", "text-embedding-3-small")
+    EMBED_DIMS = int(os.getenv("LEXINTAKE_EMBEDDING_DIMS", "1536"))
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
     def require_openai_api_key() -> str:
@@ -34,7 +25,6 @@ except ImportError:  # pragma: no cover
         return OPENAI_API_KEY
 
 
-TOKEN_RE = re.compile(r"[a-z0-9']+", re.IGNORECASE)
 DEFAULT_MODEL = EMBED_MODEL
 DEFAULT_DIMENSIONS = EMBED_DIMS
 
@@ -45,40 +35,6 @@ class Embedder(Protocol):
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         ...
-
-
-class HashEmbedder:
-    """Deterministic offline embedder (dev fallback)."""
-
-    def __init__(self, dimensions: int = 256, model_name: str = "hash-v1") -> None:
-        if dimensions < 8:
-            raise ValueError("dimensions must be >= 8")
-        self.dimensions = dimensions
-        self.model_name = model_name
-
-    def _tokenize(self, token: str) -> list[float]:
-        vector = [0.0] * self.dimensions
-        digest = hashlib.sha256(token.encode("utf-8")).digest()
-        for i in range(self.dimensions):
-            byte = digest[i % len(digest)]
-            vector[i] = (byte / 255.0) * 2.0 - 1.0
-        return vector
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for text in texts:
-            tokens = TOKEN_RE.findall(text.lower())
-            if not tokens:
-                vectors.append([0.0] * self.dimensions)
-                continue
-            acc = [0.0] * self.dimensions
-            for token in tokens:
-                token_vec = self._tokenize(token)
-                for i, value in enumerate(token_vec):
-                    acc[i] += value
-            norm = math.sqrt(sum(v * v for v in acc)) or 1.0
-            vectors.append([v / norm for v in acc])
-        return vectors
 
 
 class OpenAIEmbedderAdapter:
@@ -122,10 +78,8 @@ def get_embedder(provider: str | None = None) -> Embedder:
     active = (provider or EMBED_PROVIDER or "openai").lower()
     if active in {"openai", "openai_embedder"}:
         return OpenAIEmbedderAdapter()
-    if active == "hash":
-        return HashEmbedder(dimensions=min(EMBED_DIMS, 256), model_name="hash-v1")
     raise ValueError(
-        f"Unsupported LEXINTAKE_EMBEDDING_PROVIDER={active!r}. Supported: openai, hash."
+        f"Unsupported LEXINTAKE_EMBEDDING_PROVIDER={active!r}. Supported: openai."
     )
 
 

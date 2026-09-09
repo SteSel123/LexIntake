@@ -1,65 +1,85 @@
-"""LexIntake Agentic RAG Intake Agent (Agno)."""
+"""
+LexIntake Agentic RAG Intake Agent (Agno).
+
+Orchestrates a fixed pipeline over structured intake facts:
+  plan → (optional LLM refine) → retrieve → use_tools → decide → self_check → respond
+
+Each phase is a method; `run_intake` runs them in order and returns an IntakeResponse
+for the API / UI (lead score, message, citations, escalation, token cost, etc.).
+"""
 
 from __future__ import annotations
 
-import sys
+import logging
 import time
-from pathlib import Path
 from typing import Any
 
 from agno.agent import Agent
 
-ROOT = Path(__file__).resolve().parents[2]
-for path in (str(ROOT), str(ROOT / "tools"), str(ROOT / "db"), str(ROOT / "etl"), str(ROOT / "monitoring")):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from common import match_practice_area  # noqa: E402
-
-from agents.intake.constants import (  # noqa: E402
+from agents.intake.constants import (
     DEFAULT_CONFIDENCE_THRESHOLD,
+    FALLBACK_TOOL_ALIASES,
     INTAKE_INSTRUCTIONS,
     LEGAL_DISCLAIMER,
     PROMPTS,
+    TOP_K_MAX,
+    TOP_K_MIN,
     UNCERTAINTY_ESCALATION,
 )
-from agents.intake.decide import decide as score_intake  # noqa: E402
-from agents.intake.guardrails import enforce_message_guardrails  # noqa: E402
-from agents.intake.guardrails import self_check as run_self_check  # noqa: E402
-from agents.intake.models import (  # noqa: E402
+from agents.intake.decide import decide as score_intake
+from agents.intake.guardrails import self_check as run_self_check
+from agents.intake.models import (
     DecisionResult,
     IntakeFacts,
     IntakeResponse,
+    PlanRefineOutput,
     PlanResult,
     RetrieveResult,
+    ScreeningMessage,
     SelfCheckResult,
     ToolPhaseResult,
 )
-from agents.intake.retrieve import retrieve as retrieve_chunks  # noqa: E402
-from agents.intake.tools import (  # noqa: E402
+from agents.intake.plan import build_plan
+from agents.intake.respond import build_response
+from agents.intake.retrieve import retrieve as retrieve_chunks
+from agents.intake.tools import (
     ALLOWED_TOOL_NAMES,
     TOOLS,
     parse_tool_payload,
     run_deterministic,
 )
-from agents.llm import complete, estimate_cost, parse_json_object  # noqa: E402
-from agents.shared import enable_tracing, prepare_agent_kwargs, resolve_model  # noqa: E402
+from agents.llm import complete, complete_structured, estimate_cost
+from agents.shared import enable_tracing, prepare_agent_kwargs, resolve_model
+from monitoring.app_logging import get_console_logger, log_optional_failure
+from tools.common import attorney_key, match_practice_area
 
 try:
-    from config import LLM_MODEL, LLM_PROVIDER  # noqa: E402
+    from config import LLM_MODEL, LLM_PROVIDER
 except ImportError:  # pragma: no cover
     LLM_PROVIDER = "openai"
     LLM_MODEL = "gpt-4.1"
 
-from monitoring.app_logging import get_console_logger  # noqa: E402
-
 logger = get_console_logger("agent.intake")
+
+
+# Recoverable LLM / provider errors: log and continue with empty/None instead of crashing intake.
+_LLM_FAILURES = (
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    ValueError,
+    TypeError,
+    ConnectionError,
+)
 
 
 class IntakeAgent(Agent):
     """
     Agentic RAG intake agent with explicit phases:
     plan → retrieve → use_tools → decide → self_check → respond
+
+    Subclasses Agno Agent so tool-calling can use Agent.run (agentic path),
+    while scoring / planning stay deterministic Python for auditability.
     """
 
     def __init__(
@@ -72,16 +92,21 @@ class IntakeAgent(Agent):
         model_id: str | None = None,
         **kwargs: Any,
     ) -> None:
+        # Threshold used in decide / self_check to force escalation when unsure.
         self.confidence_threshold = confidence_threshold
-        self.top_k = max(5, min(10, int(top_k)))
+        # How many KB chunks to keep after vector search (clamped to allowed range).
+        self.top_k = max(TOP_K_MIN, min(TOP_K_MAX, int(top_k)))
+        # Human-readable step log for debugging one intake run.
         self._reasoning_log: list[str] = []
         self.provider = (provider or LLM_PROVIDER or "openai").lower()
         self.model_id = model_id or LLM_MODEL
+        # Cumulative token + $ cost for the current run (reset in run_intake).
         self._token_usage = {"input": 0, "output": 0, "total": 0}
         self._llm_cost = 0.0
 
         llm = resolve_model(self.provider, self.model_id, model)
         enable_tracing()
+        # Wire Agno: name, model, screening tools, and system instructions from prompts.xml.
         super().__init__(
             **prepare_agent_kwargs(
                 name="LexIntake Intake Agent",
@@ -94,53 +119,98 @@ class IntakeAgent(Agent):
 
     @property
     def llm_ready(self) -> bool:
+        """True when a usable chat model was resolved (structured LLM steps can run)."""
         return self.model is not None
 
     def _record_usage(self, input_tokens: int, output_tokens: int, total_tokens: int | None = None) -> None:
+        """Accumulate token counts and estimated USD cost for this intake session."""
         self._token_usage["input"] += input_tokens
         self._token_usage["output"] += output_tokens
         self._token_usage["total"] += total_tokens if total_tokens is not None else (input_tokens + output_tokens)
         self._llm_cost += estimate_cost(self.provider, input_tokens, output_tokens)
 
     def _complete(self, prompt: str, *, system: str | None = None) -> str:
+        """Free-text LLM completion; returns '' on failure or when no model is configured."""
         if not self.model:
             return ""
         try:
             result = complete(self.model, prompt, system=system)
             self._record_usage(result.input_tokens, result.output_tokens, result.total_tokens)
             return result.content
-        except Exception as exc:  # noqa: BLE001
-            self._log("llm", f"completion failed: {exc}")
+        except _LLM_FAILURES as exc:
+            self._log("llm", f"completion failed: {type(exc).__name__}: {exc}")
             return ""
 
+    def complete_structured(
+        self,
+        prompt: str,
+        output_schema: type[Any],
+        *,
+        system: str | None = None,
+        name: str = "LexIntake Structured",
+    ) -> Any:
+        """
+        Structured LLM completion (Pydantic schema).
+
+        Used by intake (plan refine, screening message) and interview agents.
+        Returns None if the model is missing or the call fails.
+        """
+        if not self.model:
+            return None
+        try:
+            result = complete_structured(
+                self.model,
+                prompt,
+                output_schema,
+                system=system,
+                name=name,
+            )
+            self._record_usage(result.input_tokens, result.output_tokens, result.total_tokens)
+            return result.parsed
+        except _LLM_FAILURES as exc:
+            self._log("llm", f"structured completion failed: {type(exc).__name__}: {exc}")
+            return None
+
+    # Backward-compatible private alias (older call sites / tests).
+    _complete_structured = complete_structured
+
     def _log(self, step: str, detail: str) -> None:
+        """Append a phase log line and emit it to the intake console logger."""
         entry = f"[{step}] {detail}"
         self._reasoning_log.append(entry)
         logger.info(entry)
 
+    # ------------------------------------------------------------------
+    # Phase helpers that optionally call the LLM
+    # ------------------------------------------------------------------
+
     def _llm_refine_plan(self, facts: IntakeFacts, plan: PlanResult) -> PlanResult:
+        """
+        Ask the LLM to adjust tools / retrieval query / doc_types on top of the
+        deterministic plan. Falls back to the original plan if parsing fails.
+        Only tool names in ALLOWED_TOOL_NAMES are kept.
+        """
         if not self.llm_ready:
             return plan
-        raw = self._complete(
+        refined = self.complete_structured(
             PROMPTS.user("plan_refine", facts=facts.model_dump_json(), plan=plan.model_dump_json()),
+            PlanRefineOutput,
             system=PROMPTS.text("plan_refine_system"),
+            name="LexIntake Plan Refine",
         )
-        payload = parse_json_object(raw)
-        if not payload:
-            if raw:
-                self._log("plan", "llm refine parse failed: no JSON object")
+        if not isinstance(refined, PlanRefineOutput):
+            self._log("plan", "llm refine parse failed: no structured PlanRefineOutput")
             return plan
-        tools = [t for t in payload.get("tools_to_call", plan.tools_to_call) if t in ALLOWED_TOOL_NAMES]
+        tools = [t for t in refined.tools_to_call if t in ALLOWED_TOOL_NAMES]
         if tools:
             plan.tools_to_call = tools
-        if payload.get("retrieval_query"):
-            plan.retrieval_query = str(payload["retrieval_query"])
-        if isinstance(payload.get("doc_types"), list) and payload["doc_types"]:
-            plan.doc_types = [str(x) for x in payload["doc_types"]]
-        if "escalate" in payload:
-            plan.escalate = bool(payload["escalate"]) or plan.escalate
-        if payload.get("reasoning"):
-            plan.reasoning = f"{plan.reasoning}; llm={payload['reasoning']}"
+        if refined.retrieval_query:
+            plan.retrieval_query = refined.retrieval_query
+        if refined.doc_types:
+            plan.doc_types = [str(x) for x in refined.doc_types]
+        plan.escalate = refined.escalate or plan.escalate
+        if refined.reasoning:
+            plan.reasoning = f"{plan.reasoning}; llm={refined.reasoning}"
         self._log("plan", f"llm-refined tools={plan.tools_to_call}")
         return plan
 
@@ -153,6 +223,10 @@ class IntakeAgent(Agent):
         escalate: bool,
         questions: list[str],
     ) -> str:
+        """
+        Generate the client-facing screening message via structured LLM output.
+        Returns '' when the model does not return a ScreeningMessage (caller uses template).
+        """
         cites = [
             {
                 "chunk_id": c.chunk_id,
@@ -162,7 +236,7 @@ class IntakeAgent(Agent):
             }
             for c in retrieval.citations
         ]
-        return self._complete(
+        written = self.complete_structured(
             PROMPTS.user(
                 "write_message",
                 uncertainty_escalation=UNCERTAINTY_ESCALATION,
@@ -174,91 +248,66 @@ class IntakeAgent(Agent):
                 escalate=escalate,
                 questions=questions,
             ),
+            ScreeningMessage,
             system="\n".join(INTAKE_INSTRUCTIONS),
+            name="LexIntake Screening Message",
         )
+        if isinstance(written, ScreeningMessage):
+            return written.message
+        return ""
+
+    # ------------------------------------------------------------------
+    # Pipeline phases (callable individually or via run_intake)
+    # ------------------------------------------------------------------
 
     def plan(self, facts: IntakeFacts) -> PlanResult:
-        """Decide questions, retrieval need, tools, and escalation."""
-        missing: list[str] = []
-        questions: list[str] = []
-        values = facts.model_dump()
-        for field, question in PROMPTS.mapping("field_questions").items():
-            if values.get(field) in (None, "", []):
-                missing.append(field)
-                questions.append(question)
-
-        case_type = facts.case_type or facts.practice_area
-        practice_area = match_practice_area(case_type or "") if case_type else None
-        tools: list[str] = []
-        doc_types: list[str] = []
-        need_retrieval = bool(practice_area or facts.narrative)
-
-        if facts.jurisdiction and case_type and facts.incident_date:
-            tools.append("check_statute_of_limitations")
-            doc_types.append("sol_rules")
-        if facts.name and facts.opposing_party:
-            tools.append("conflict_check")
-        if case_type and facts.damages is not None:
-            tools.append("estimate_case_value")
-            doc_types.append("past_case")
-        if practice_area or facts.practice_area:
-            tools.append("route_lead")
-            doc_types.append("acceptance_criteria")
-        escalate = len(missing) >= 5
-        if not practice_area and case_type:
-            tools.append("web_search_fallback")
-
-        query_parts = [
-            p
-            for p in [
-                practice_area or case_type,
-                facts.jurisdiction,
-                facts.narrative,
-                "intake acceptance criteria statute settlement",
-            ]
-            if p
-        ]
-        plan = PlanResult(
-            missing_fields=missing,
-            questions=questions,
-            need_retrieval=need_retrieval,
-            tools_to_call=tools,
-            escalate=escalate,
-            retrieval_query=" ".join(query_parts).strip(),
-            doc_types=sorted(set(doc_types)) or ["acceptance_criteria", "sol_rules", "faq"],
-            reasoning=(
-                f"missing={missing}; practice_area={practice_area}; "
-                f"tools={tools}; retrieve={need_retrieval}"
-            ),
-        )
+        """
+        Deterministic plan: missing fields → questions, which tools to run,
+        whether KB retrieval is needed, and early escalate if too incomplete.
+        """
+        plan = build_plan(facts)
         self._log("plan", plan.reasoning)
         return plan
 
     def retrieve(self, facts: IntakeFacts, plan: PlanResult) -> RetrieveResult:
+        """Vector-search the KB for relevant chunks/citations (or skip if plan says so)."""
         return retrieve_chunks(facts, plan, top_k=self.top_k, log=self._log)
 
     def use_tools(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
+        """
+        Run intake tools (SOL, conflict, estimate, routing, KB fallback).
+
+        Prefers Agno Agent.run (LLM picks/calls tools) when a model is ready;
+        otherwise (or on failure) runs the planned tools deterministically.
+        """
         if self.llm_ready:
             try:
                 agentic = self._use_tools_agentic(facts, plan)
+                # Only accept agentic output if at least one tool produced a payload.
                 if agentic and any(
                     [agentic.sol, agentic.conflict, agentic.estimate, agentic.routing, agentic.web_fallback]
                 ):
                     self._log("tools", "agentic Agent.run tool_choice=auto")
                     return agentic
-            except Exception as exc:  # noqa: BLE001
-                self._log("tools", f"agentic path failed, falling back: {exc}")
+            except _LLM_FAILURES as exc:
+                self._log("tools", f"agentic path failed, falling back: {type(exc).__name__}: {exc}")
         return self._use_tools_deterministic(facts, plan)
 
     def _use_tools_deterministic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
+        """Call exactly the tools listed in plan.tools_to_call with known inputs (no LLM)."""
         return run_deterministic(facts, plan, log=lambda detail: self._log("tools", detail))
 
     def _use_tools_agentic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
+        """
+        Let Agno run tools via the LLM, then map tool names → ToolPhaseResult fields.
+        Fill any gaps from the deterministic path so required checks are not skipped.
+        """
         run_out = self.run(
             PROMPTS.user("use_tools", facts=facts.model_dump_json(), tools_to_call=plan.tools_to_call)
         )
         result = ToolPhaseResult()
         for row in getattr(run_out, "tools", None) or []:
+            # Agno tool-call rows expose different attribute names across versions.
             name = str(
                 getattr(row, "tool_name", None)
                 or getattr(row, "name", None)
@@ -278,9 +327,10 @@ class IntakeAgent(Agent):
                 result.estimate = payload
             elif "route" in name:
                 result.routing = payload
-            elif "web_search" in name or "fallback" in name:
+            elif name in FALLBACK_TOOL_ALIASES or "fallback" in name or "kb_docs" in name:
                 result.web_fallback = payload
 
+        # Merge deterministic results so missing agentic calls still get filled.
         det = self._use_tools_deterministic(facts, plan)
         result.sol = result.sol or det.sol
         result.conflict = result.conflict or det.conflict
@@ -301,8 +351,14 @@ class IntakeAgent(Agent):
         retrieval: RetrieveResult,
         tools: ToolPhaseResult,
     ) -> DecisionResult:
+        """Score the lead and map to ACCEPT / REVIEW / REJECT (+ next steps, confidence)."""
         decision = score_intake(
-            facts, plan, retrieval, tools, confidence_threshold=self.confidence_threshold
+            facts,
+            plan,
+            retrieval,
+            tools,
+            confidence_threshold=self.confidence_threshold,
+            narrative=facts.narrative,
         )
         self._log("decide", decision.model_dump_json())
         return decision
@@ -314,6 +370,10 @@ class IntakeAgent(Agent):
         decision: DecisionResult,
         plan: PlanResult,
     ) -> SelfCheckResult:
+        """
+        Guardrails on a draft message: citations, confidence, escalate flags.
+        Used before the final respond so unsafe drafts can force human review.
+        """
         result = run_self_check(
             response_draft,
             retrieval,
@@ -335,137 +395,104 @@ class IntakeAgent(Agent):
         *,
         use_llm: bool = True,
     ) -> IntakeResponse:
-        escalate = check.escalate or decision.confidence < self.confidence_threshold
-        questions = plan.questions[:3]
-        used_llm = False
-        message = ""
-
-        if use_llm and self.llm_ready:
-            message = self._llm_write_message(
-                facts, retrieval, tools, decision, escalate=escalate, questions=questions
-            )
-            used_llm = bool(message)
-
-        if not message:
-            citation_lines = [
-                PROMPTS.text(
-                    "citation_line",
-                    chunk_id=cite.chunk_id,
-                    practice_area=cite.practice_area,
-                    doc_type=cite.doc_type,
-                )
-                for cite in retrieval.citations
-            ]
-            tool_summary_parts: list[str] = []
-            if tools.sol:
-                tool_summary_parts.append(
-                    f"SOL check: valid={tools.sol.get('valid')}, "
-                    f"expires_in={tools.sol.get('expires_in')} days."
-                )
-            if tools.conflict:
-                tool_summary_parts.append(
-                    f"Conflict check: conflict={tools.conflict.get('conflict')}."
-                )
-            if tools.estimate:
-                tool_summary_parts.append(
-                    f"Value estimate: ${float(tools.estimate.get('estimate') or 0):,.2f} "
-                    f"(range ${float(tools.estimate.get('range_low') or 0):,.2f}"
-                    f"–${float(tools.estimate.get('range_high') or 0):,.2f})."
-                )
-            if tools.routing:
-                tool_summary_parts.append(
-                    f"Routing: {tools.routing.get('attorney_name') or 'unassigned'}."
-                )
-            if tools.web_fallback:
-                tool_summary_parts.append("Fallback retrieval was used (local KB only).")
-            question_block = ""
-            if questions:
-                question_block = "Next questions:\n" + "\n".join(f"- {q}" for q in questions)
-            message = PROMPTS.user(
-                "screening_summary",
-                matter=facts.practice_area or facts.case_type or "unspecified",
-                jurisdiction=facts.jurisdiction or "unspecified",
-                lead_score=decision.lead_score,
-                case_viability=decision.case_viability,
-                routing_recommendation=decision.routing_recommendation,
-                tool_results=chr(10).join(f"- {p}" for p in tool_summary_parts)
-                or PROMPTS.text("no_tools"),
-                citations="\n".join(citation_lines) if citation_lines else PROMPTS.text("no_citations"),
-                next_steps=chr(10).join(f"- {s}" for s in decision.next_steps),
-                question_block=question_block,
-                escalation_line=UNCERTAINTY_ESCALATION if escalate else "",
-                legal_disclaimer=LEGAL_DISCLAIMER,
-                reminder=PROMPTS.text("screening_reminder"),
-            ).strip()
-
-        message = enforce_message_guardrails(
-            message, escalate=escalate, citations=retrieval.citations
-        )
-        response = IntakeResponse(
-            message=message,
-            disclaimer=LEGAL_DISCLAIMER,
-            lead_score=decision.lead_score,
-            case_viability=decision.case_viability,
-            routing_recommendation=decision.routing_recommendation,
-            next_steps=decision.next_steps,
-            citations=retrieval.citations,
-            tool_results=tools.model_dump(),
-            escalate=escalate,
-            confidence=decision.confidence,
-            questions=questions,
+        """
+        Assemble the final IntakeResponse (message, scores, citations, cost metadata).
+        When use_llm=True and the model is ready, prefers LLM-written screening text;
+        otherwise uses the templated message builder.
+        """
+        return build_response(
+            facts,
+            plan,
+            retrieval,
+            tools,
+            decision,
+            check,
+            confidence_threshold=self.confidence_threshold,
             provider=self.provider,
             model_id=str(self.model_id or ""),
-            cost=float(self._llm_cost),
+            llm_cost=float(self._llm_cost),
             input_tokens=int(self._token_usage["input"]),
             output_tokens=int(self._token_usage["output"]),
-            used_llm=used_llm,
+            write_message=self._llm_write_message,
+            use_llm=use_llm,
+            llm_ready=self.llm_ready,
+            log=self._log,
         )
-        self._log("respond", f"escalate={escalate} score={decision.lead_score} llm={used_llm}")
-        return response
+
+    def _log_tool_metrics(self, tools: ToolPhaseResult, decision: DecisionResult) -> None:
+        """Best-effort monitoring hooks (lead score, SOL failure, conflict, attorney route)."""
+        try:
+            from monitoring.logger import log_case_value, log_event, log_lead_score
+
+            log_lead_score(decision.lead_score)
+            if tools.estimate and tools.estimate.get("estimate") is not None:
+                log_case_value(float(tools.estimate["estimate"]))
+            if tools.sol and tools.sol.get("valid") is False:
+                log_event("sol_failure", {"reason": "sol_invalid"})
+            if tools.conflict and tools.conflict.get("conflict"):
+                log_event("conflict_detected", {"reason": "conflict"})
+            if tools.routing and tools.routing.get("attorney_name"):
+                log_event(
+                    "attorney_route",
+                    {"attorney_key": attorney_key(str(tools.routing["attorney_name"]))},
+                )
+        except Exception as exc:  # noqa: BLE001 — metrics must not break intake
+            log_optional_failure(logger, "tool metrics", exc)
+
+    # ------------------------------------------------------------------
+    # Full pipeline
+    # ------------------------------------------------------------------
 
     def run_intake(self, facts: IntakeFacts | dict[str, Any]) -> IntakeResponse:
-        """plan → (llm refine) → retrieve → use_tools → decide → self_check → respond"""
+        """
+        End-to-end intake:
+
+          1. Normalize facts (IntakeFacts)
+          2. plan (+ optional LLM refine)
+          3. retrieve KB chunks
+          4. use_tools (agentic or deterministic)
+          5. decide (lead score / viability)
+          6. draft message without LLM → self_check → final respond (LLM if available)
+          7. Attach latency, tokens, cost; log escalation if needed
+        """
         self._reasoning_log.clear()
         self._token_usage = {"input": 0, "output": 0, "total": 0}
         self._llm_cost = 0.0
         started = time.perf_counter()
-        intake = (
-            facts
-            if type(facts).__name__ == "IntakeFacts" and hasattr(facts, "model_dump")
-            else IntakeFacts.model_validate(
-                facts.model_dump() if hasattr(facts, "model_dump") else facts
-            )
-        )
-        if not isinstance(intake, IntakeFacts) or type(intake) is not IntakeFacts:
-            intake = IntakeFacts.model_validate(intake.model_dump())
+        # Accept IntakeFacts, another pydantic model, or a plain dict from the API.
+        if isinstance(facts, IntakeFacts):
+            intake = facts
+        elif hasattr(facts, "model_dump"):
+            intake = IntakeFacts.model_validate(facts.model_dump())
+        else:
+            intake = IntakeFacts.model_validate(facts)
 
+        # Monitoring is optional: intake must still work if logger/metrics are unavailable.
         try:
-            from monitoring.logger import (
-                get_logger,
-                log_case_value,
-                log_escalation,
-                log_event,
-                log_lead_score,
-                step_span,
-            )
+            from monitoring.logger import get_logger, log_escalation, step_span
             from monitoring.metrics import get_metrics
-        except Exception:  # noqa: BLE001
+        except ImportError as exc:
+            log_optional_failure(logger, "monitoring import", exc, level=logging.WARNING)
             get_logger = None  # type: ignore[assignment]
             step_span = None  # type: ignore[assignment]
+            log_escalation = None  # type: ignore[assignment]
+            get_metrics = None  # type: ignore[assignment]
 
         slog = get_logger(agent_id="intake") if get_logger else None
-        if slog is not None:
+        if slog is not None and get_metrics is not None:
             try:
                 get_metrics().start_session(slog.session_id)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log_optional_failure(logger, "metrics session start", exc)
 
+        # Keep case_type and practice_area in sync (tools / KB filters use both).
         if intake.case_type and not intake.practice_area:
             intake.practice_area = match_practice_area(intake.case_type) or intake.case_type
         elif intake.practice_area and not intake.case_type:
             intake.case_type = intake.practice_area
 
         def _run_step(name: str, fn):
+            """Run a phase, wrapping it in a monitoring span when available."""
             if step_span is None:
                 return fn()
             with step_span(name):
@@ -479,24 +506,11 @@ class IntakeAgent(Agent):
         decision = _run_step("decision", lambda: self.decide(intake, plan, retrieval, tools))
 
         if slog is not None:
-            try:
-                log_lead_score(decision.lead_score)
-                if tools.estimate and tools.estimate.get("estimate") is not None:
-                    log_case_value(float(tools.estimate["estimate"]))
-                if tools.sol and tools.sol.get("valid") is False:
-                    log_event("sol_failure", {"reason": "sol_invalid"})
-                if tools.conflict and tools.conflict.get("conflict"):
-                    log_event("conflict_detected", {"reason": "conflict"})
-                if tools.routing and tools.routing.get("attorney_name"):
-                    key = "".join(
-                        ch if ch.isalnum() else "_"
-                        for ch in str(tools.routing["attorney_name"]).lower()
-                    )
-                    log_event("attorney_route", {"attorney_key": key[:80]})
-            except Exception:  # noqa: BLE001
-                pass
+            self._log_tool_metrics(tools, decision)
 
         def _self_check_phase():
+            # First respond without LLM to get a stable draft for guardrails,
+            # then self_check, then final respond (may use LLM for the message).
             draft_local = self.respond(
                 intake, plan, retrieval, tools, decision, SelfCheckResult(ok=True), use_llm=False
             )
@@ -508,6 +522,7 @@ class IntakeAgent(Agent):
             return final_local, check_local
 
         final, _check = _run_step("self-check", _self_check_phase)
+        # Ensure escalated responses always include the standard uncertainty notice.
         if final.escalate and UNCERTAINTY_ESCALATION not in final.message:
             final.message = f"{final.message}\n\n{UNCERTAINTY_ESCALATION}"
 
@@ -521,15 +536,16 @@ class IntakeAgent(Agent):
         if slog is not None:
             try:
                 slog.log_tokens(tokens=int(self._token_usage["total"]), cost=float(self._llm_cost))
-            except Exception:  # noqa: BLE001
-                pass
-        if final.escalate and slog is not None:
+            except Exception as exc:  # noqa: BLE001
+                log_optional_failure(logger, "token logging", exc)
+        if final.escalate and slog is not None and log_escalation is not None:
             try:
                 log_escalation("uncertainty_or_conflict")
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log_optional_failure(logger, "escalation logging", exc)
         return final
 
 
 def build_default_agent(**kwargs: Any) -> IntakeAgent:
+    """Factory used by API / frontend to construct a configured IntakeAgent."""
     return IntakeAgent(**kwargs)

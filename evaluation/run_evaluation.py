@@ -5,27 +5,14 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
+from evaluation.eval_logger import EvalLogger
+from evaluation.eval_metrics import EvalMetrics
+
 EVAL_DIR = Path(__file__).resolve().parent
-for path in (
-    str(ROOT),
-    str(EVAL_DIR),
-    str(ROOT / "agents"),
-    str(ROOT / "tools"),
-    str(ROOT / "db"),
-    str(ROOT / "scoring"),
-):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from eval_logger import EvalLogger  # noqa: E402
-from eval_metrics import EvalMetrics  # noqa: E402
-
 LEADS_PATH = EVAL_DIR / "leads.csv"
 
 # Live provider comparison matrix (Task 6).
@@ -366,18 +353,10 @@ def main() -> None:
             print(f"SKIP {msg}")
             continue
         try:
-            if provider in {"local", "deterministic", "hash", "none"}:
-                agent = IntakeAgent(
-                    model=None,
-                    provider="local",
-                    model_id="deterministic",
-                    top_k=8,
-                )
-            else:
-                agent = IntakeAgent(provider=provider, model_id=model_id, top_k=8)
-                if not agent.llm_ready:
-                    print(f"SKIP {provider}/{model_id}: model failed to initialize")
-                    continue
+            agent = IntakeAgent(provider=provider, model_id=model_id, top_k=8)
+            if not agent.llm_ready:
+                print(f"SKIP {provider}/{model_id}: model failed to initialize")
+                continue
             ready.append((provider, model_id, agent))
             print(f"READY {provider}/{model_id}")
         except Exception as exc:  # noqa: BLE001
@@ -386,9 +365,10 @@ def main() -> None:
             print(f"SKIP {provider}/{model_id}: {exc}")
 
     if not ready:
-        # Deterministic fallback so local offline eval still works.
-        print("No live LLM providers available; running deterministic fallback agent.")
-        ready.append(("local", "deterministic", IntakeAgent(model=None, provider="local", model_id="deterministic")))
+        raise RuntimeError(
+            "No live LLM providers available. Set OPENAI_API_KEY (and optional "
+            "ANTHROPIC_API_KEY / GROQ_API_KEY) in .env."
+        )
 
     for idx, lead in enumerate(leads, start=1):
         lead_id = f"lead-{idx:03d}"

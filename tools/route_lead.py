@@ -8,11 +8,11 @@ from typing import Any
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import (
-    get_sqlite_connection,
+from tools.common import (
     load_practice_areas,
     logger,
     match_practice_area,
+    query_structured,
     slugify,
     tool_timer,
 )
@@ -79,31 +79,28 @@ def route_lead(payload: RouteLeadInput) -> RouteLeadOutput:
 
 def _route_lead_impl(payload: RouteLeadInput) -> RouteLeadOutput:
     try:
-        conn = get_sqlite_connection()
-        if conn is None:
-            return RouteLeadOutput(
-                attorney_name="",
-                motivation="Fallback: structured DB unavailable. Manual routing required.",
-            )
-
         practice_area = match_practice_area(payload.practice_area) or payload.practice_area
-        attorneys = conn.execute(
+        attorneys = query_structured(
             """
             SELECT id, name, specialization, experience_years, jurisdictions, availability
             FROM attorneys
             ORDER BY name
             """
-        ).fetchall()
+        )
+        if not attorneys:
+            return RouteLeadOutput(
+                attorney_name="",
+                motivation="Fallback: structured DB unavailable or empty. Manual routing required.",
+            )
 
-        caseload_rows = conn.execute(
+        caseload_rows = query_structured(
             """
             SELECT attorney_id, COUNT(*) AS case_count
             FROM past_cases
             WHERE attorney_id IS NOT NULL
             GROUP BY attorney_id
             """
-        ).fetchall()
-        conn.close()
+        )
 
         caseload = {str(r["attorney_id"]): int(r["case_count"]) for r in caseload_rows}
         area_slug = slugify(practice_area)

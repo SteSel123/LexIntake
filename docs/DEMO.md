@@ -8,9 +8,21 @@ Use this script to record a **3–5 minute demo video**.
 
 ## Prerequisites
 
+**Default — full Docker stack:**
+
+```bash
+# .env with OPENAI_API_KEY
+make setup
+# UI http://localhost:8501  ·  API http://localhost:8000/docs
+```
+
+**Optional — local Python + Postgres container:**
+
 ```powershell
 pip install -r requirements.txt
-python db/init_structured_db.py
+docker compose up -d postgres
+copy .env.example .env   # set OPENAI_API_KEY + DATABASE_URL
+python -m db.init_structured_db
 python -m etl.pipeline
 ```
 
@@ -28,14 +40,15 @@ Show briefly:
 
 - `kb/` knowledge base
 - `etl/extract`, `etl/transform`, `etl/load` pipeline
-- `db/` LanceDB + SQLite
+- `db/` PostgreSQL + pgvector
 - `agents/` + `tools/` + `scoring/`
-- `monitoring/` + `evaluation/` + `ui/`
+- `monitoring/` + `evaluation/` + `frontend/`
 
 ### 0:50–2:40 — Live UI demo
 
 ```powershell
-python -m streamlit run ui/app.py
+python -m streamlit run frontend/app.py
+# Optional API docs: uvicorn backend.api.main:app --reload --port 8000
 ```
 
 Run these sidebar examples:
@@ -83,7 +96,7 @@ Show summary metrics and mention full report in `docs/EVALUATION_REPORT.md`.
 ## CLI alternative (no video UI)
 
 ```powershell
-python ui/demo.py
+python frontend/demo.py
 ```
 
 Expected: `Demo complete: 4/4 scenarios passed`.

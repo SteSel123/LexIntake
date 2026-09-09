@@ -10,7 +10,7 @@ $first_question]]></text>
   <text id="closing"><![CDATA[Intake interview complete. Here is the screening summary:
 
 $summary]]></text>
-  <text id="extract_system">Return JSON only. No legal advice.</text>
+  <text id="extract_system">Extract known intake fields into the structured schema. Use null for unknown. No legal advice.</text>
 
   <map id="field_prompts">
     <item key="name">What is your full name?</item>
@@ -22,8 +22,7 @@ $summary]]></text>
   </map>
 
   <prompt id="extract_fields">
-    <user><![CDATA[Extract intake fields from the user reply into JSON only.
-Keys: name, opposing_party, practice_area, jurisdiction, incident_date, damages (int|null), severity.
+    <user><![CDATA[Extract intake fields from the user reply into ExtractedIntakeFields.
 Use null for unknown. Current facts: $facts
 User reply: $text]]></user>
   </prompt>

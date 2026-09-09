@@ -8,31 +8,17 @@ from typing import Any, Sequence
 from agno.agent import Agent
 
 from agents.llm import build_model
-from monitoring.app_logging import get_console_logger
-
-logger = get_console_logger("agent.shared")
-
-LOCAL_PROVIDERS = frozenset({"local", "deterministic", "hash", "none"})
 
 
 def resolve_model(
     provider: str,
     model_id: str | None = None,
     model: Any | None = None,
-) -> Any | None:
-    """Resolve an Agno LLM model, or None for deterministic/local paths."""
+) -> Any:
+    """Resolve an Agno LLM model. Live API credentials are required."""
     if model is not None:
         return model
-    if provider in LOCAL_PROVIDERS:
-        return None
-    try:
-        return build_model(provider, model_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "LLM unavailable (%s); agent will use deterministic fallback path.",
-            exc,
-        )
-        return None
+    return build_model(provider, model_id)
 
 
 def enable_tracing() -> None:
@@ -41,8 +27,12 @@ def enable_tracing() -> None:
         from monitoring.agno_tracing import enable_agno_monitoring
 
         enable_agno_monitoring()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("agents.shared").warning(
+            "Agno tracing setup skipped: %s: %s", type(exc).__name__, exc
+        )
 
 
 def prepare_agent_kwargs(
@@ -54,6 +44,8 @@ def prepare_agent_kwargs(
     markdown: bool = True,
     reasoning: bool = True,
     tool_choice: str | None = "auto",
+    output_schema: Any | None = None,
+    structured_outputs: bool | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Build kwargs for ``Agent.__init__``, including version-safe Agno flags."""
@@ -70,6 +62,14 @@ def prepare_agent_kwargs(
         agent_kwargs["reasoning"] = True
     if tool_choice is not None and "tool_choice" in supported:
         agent_kwargs["tool_choice"] = tool_choice
+    if output_schema is not None and "output_schema" in supported:
+        agent_kwargs["output_schema"] = output_schema
+        if structured_outputs is None:
+            structured_outputs = True
+    if structured_outputs is not None and "structured_outputs" in supported:
+        agent_kwargs["structured_outputs"] = structured_outputs
+    if output_schema is not None and "parse_response" in supported:
+        agent_kwargs["parse_response"] = True
     return agent_kwargs
 
 
@@ -84,6 +84,8 @@ def make_agent(
     markdown: bool = True,
     reasoning: bool = True,
     tool_choice: str | None = "auto",
+    output_schema: Any | None = None,
+    structured_outputs: bool | None = None,
     enable_monitoring: bool = True,
     **kwargs: Any,
 ) -> Agent:
@@ -114,6 +116,8 @@ def make_agent(
             markdown=markdown,
             reasoning=reasoning,
             tool_choice=tool_choice,
+            output_schema=output_schema,
+            structured_outputs=structured_outputs,
             **kwargs,
         )
     )

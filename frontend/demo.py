@@ -2,17 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 
-UI_DIR = Path(__file__).resolve().parent
-ROOT = UI_DIR.parent
-for path in (str(ROOT), str(UI_DIR)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from runner import LEGAL_DISCLAIMER, run_intake_analysis
+from backend.services.intake_service import LEGAL_DISCLAIMER, run_intake_analysis
 
 SCENARIOS: list[dict[str, Any]] = [
     {

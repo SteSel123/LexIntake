@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import re
-import sys
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from pydantic import BaseModel, ValidationError
 
-from config import (  # noqa: E402
+from config import (
     ANTHROPIC_API_KEY,
     GROQ_API_KEY,
     LLM_MODEL,
@@ -21,6 +15,10 @@ from config import (  # noqa: E402
     OPENAI_API_KEY,
     require_openai_api_key,
 )
+from monitoring.app_logging import get_console_logger, log_optional_failure
+
+TModel = TypeVar("TModel", bound=BaseModel)
+_logger = get_console_logger("agents.llm")
 
 
 def build_model(
@@ -38,9 +36,6 @@ def build_model(
         "llama3-70b": "llama3-70b-8192",
     }
     model = aliases.get(model or "", model)
-
-    if active in {"local", "deterministic", "hash", "none"}:
-        raise RuntimeError(f"Provider {active} has no remote LLM")
 
     if active == "openai":
         from agno.models.openai import OpenAIChat
@@ -66,8 +61,6 @@ def build_model(
 
 def provider_available(provider: str) -> bool:
     p = provider.lower()
-    if p in {"local", "deterministic", "hash", "none"}:
-        return True
     if p == "openai":
         return bool(OPENAI_API_KEY)
     if p == "anthropic":
@@ -90,6 +83,7 @@ class CompletionResult:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    parsed: BaseModel | None = None
 
 
 def estimate_cost(provider: str, input_tokens: int, output_tokens: int) -> float:
@@ -97,47 +91,89 @@ def estimate_cost(provider: str, input_tokens: int, output_tokens: int) -> float
     return input_tokens * inn + output_tokens * out
 
 
-def parse_json_object(raw: str) -> dict[str, Any] | None:
-    """Extract the first JSON object from an LLM reply."""
-    if not raw:
+def _usage_from_run(run_out: Any, prompt: str, content: Any) -> tuple[int, int, int]:
+    metrics = getattr(run_out, "metrics", None)
+    in_tok = int(getattr(metrics, "input_tokens", None) or getattr(run_out, "input_tokens", None) or 0)
+    out_tok = int(getattr(metrics, "output_tokens", None) or getattr(run_out, "output_tokens", None) or 0)
+    if in_tok == 0 and out_tok == 0:
+        in_tok = max(1, len(prompt) // 4)
+        out_tok = max(1, len(str(content or "")) // 4)
+    total = int(getattr(metrics, "total_tokens", None) or getattr(run_out, "total_tokens", None) or (in_tok + out_tok))
+    return in_tok, out_tok, total
+
+
+def _parse_structured(content: Any, output_schema: type[TModel]) -> TModel | None:
+    if content is None:
         return None
     try:
-        match = re.search(r"\{.*\}", raw, flags=re.S)
-        payload = json.loads(match.group(0) if match else raw)
-        return payload if isinstance(payload, dict) else None
-    except Exception:  # noqa: BLE001
+        if isinstance(content, output_schema):
+            return content
+        if isinstance(content, BaseModel):
+            return output_schema.model_validate(content.model_dump())
+        if isinstance(content, dict):
+            return output_schema.model_validate(content)
+        if isinstance(content, str) and content.strip():
+            return output_schema.model_validate_json(content)
+    except (ValidationError, ValueError, TypeError) as exc:
+        log_optional_failure(_logger, "structured parse", exc)
         return None
+    return None
+
+
+def complete_structured(
+    model: Any,
+    prompt: str,
+    output_schema: type[TModel],
+    *,
+    system: str | None = None,
+    name: str = "LexIntake Structured",
+) -> CompletionResult:
+    """Single-shot Agno run with a Pydantic ``output_schema``."""
+    if not model:
+        return CompletionResult(content="")
+    from agno.agent import Agent
+
+    agent = Agent(
+        name=name,
+        model=model,
+        instructions=system,
+        output_schema=output_schema,
+        structured_outputs=True,
+        parse_response=True,
+        markdown=False,
+        reasoning=False,
+        telemetry=False,
+    )
+    run_out = agent.run(prompt, output_schema=output_schema)
+    parsed = _parse_structured(getattr(run_out, "content", None), output_schema)
+    content = parsed.model_dump_json() if parsed is not None else str(getattr(run_out, "content", "") or "")
+    in_tok, out_tok, total = _usage_from_run(run_out, prompt, content)
+    return CompletionResult(
+        content=content.strip(),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        total_tokens=total,
+        parsed=parsed,
+    )
 
 
 def complete(model: Any, prompt: str, *, system: str | None = None) -> CompletionResult:
-    """Single-shot LLM completion (no tool loop)."""
+    """Single-shot unstructured LLM completion (no tool loop)."""
     if not model:
         return CompletionResult(content="")
-    from agno.models.message import Message
+    from agno.agent import Agent
 
-    messages = []
-    if system:
-        messages.append(Message(role="system", content=system))
-    messages.append(Message(role="user", content=prompt))
-    response = model.response(messages)
-    content = getattr(response, "content", None) or ""
-    usage = getattr(response, "response_usage", None)
-    in_tok = int(
-        getattr(response, "input_tokens", None)
-        or getattr(usage, "input_tokens", None)
-        or getattr(usage, "prompt_tokens", None)
-        or 0
+    agent = Agent(
+        name="LexIntake Complete",
+        model=model,
+        instructions=system,
+        markdown=False,
+        reasoning=False,
+        telemetry=False,
     )
-    out_tok = int(
-        getattr(response, "output_tokens", None)
-        or getattr(usage, "output_tokens", None)
-        or getattr(usage, "completion_tokens", None)
-        or 0
-    )
-    if in_tok == 0 and out_tok == 0:
-        in_tok = max(1, len(prompt) // 4)
-        out_tok = max(1, len(str(content)) // 4)
-    total = int(getattr(response, "total_tokens", 0) or (in_tok + out_tok))
+    run_out = agent.run(prompt)
+    content = getattr(run_out, "content", None) or ""
+    in_tok, out_tok, total = _usage_from_run(run_out, prompt, content)
     return CompletionResult(
         content=str(content).strip(),
         input_tokens=in_tok,

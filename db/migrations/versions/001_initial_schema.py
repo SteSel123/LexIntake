@@ -1,4 +1,4 @@
-"""Initial clients, attorneys, and past_cases schema.
+"""Initial clients, attorneys, and past_cases schema (PostgreSQL).
 
 Revision ID: 001_initial
 Revises:
@@ -19,6 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    created_at = sa.text("CURRENT_TIMESTAMP")
     op.create_table(
         "clients",
         sa.Column("id", sa.Text(), nullable=False),
@@ -26,7 +27,7 @@ def upgrade() -> None:
         sa.Column("email", sa.Text(), nullable=True),
         sa.Column("phone", sa.Text(), nullable=True),
         sa.Column("state", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.Text(), nullable=False, server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.Text(), nullable=False, server_default=created_at),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_clients_state", "clients", ["state"])
@@ -39,7 +40,7 @@ def upgrade() -> None:
         sa.Column("experience_years", sa.Integer(), nullable=True),
         sa.Column("jurisdictions", sa.Text(), nullable=True),
         sa.Column("availability", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.Text(), nullable=False, server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.Text(), nullable=False, server_default=created_at),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_attorneys_availability", "attorneys", ["availability"])
@@ -55,7 +56,7 @@ def upgrade() -> None:
         sa.Column("settlement_amount", sa.Integer(), nullable=True),
         sa.Column("attorney_id", sa.Text(), nullable=True),
         sa.Column("client_id", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.Text(), nullable=False, server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.Text(), nullable=False, server_default=created_at),
         sa.ForeignKeyConstraint(["attorney_id"], ["attorneys.id"]),
         sa.ForeignKeyConstraint(["client_id"], ["clients.id"]),
         sa.PrimaryKeyConstraint("id"),

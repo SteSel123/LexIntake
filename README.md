@@ -1,4 +1,4 @@
-# LexIntake
+﻿# LexIntake
 
 Agentic RAG intake system for law firms. Prospective leads are screened for practice-area fit, jurisdiction, statute of limitations, conflicts, case value, and attorney routing — with legal guardrails and full observability.
 
@@ -6,103 +6,111 @@ Agentic RAG intake system for law firms. Prospective leads are screened for prac
 
 ## Features
 
-- Synthetic law-firm knowledge base (`kb/`)
-- Re-runnable / idempotent / incremental ETL → LanceDB
-- Structured entities in SQLite (`clients`, `attorneys`, `past_cases`)
+- Synthetic law-firm knowledge base (`kb/`) with multiple document types
+- ETL → PostgreSQL `kb_docs` via **pgvector** (HNSW) + JSONB payloads
+- Structured entities in PostgreSQL (`clients`, `attorneys`, `past_cases`)
 - Agno tools: SOL check, conflict check, case value, routing, fallback
-- Intake agent: plan → retrieve → **agentic tool selection** (`Agent.run`) → score → self-check → respond  
-- Multi-turn **Interview** tab for prospective clients  
-- Lead scoring engine with explicit decisions (`SCHEDULE_CONSULT` / `REVIEW` / `REJECT`)  
-- Monitoring: JSONL metrics + Streamlit dashboard + **Agno native tracing**  
+- Intake agent: plan → retrieve → **agentic tool selection** (`Agent.run`) → score → self-check → respond
+- Multi-turn **Interview** tab for prospective clients
+- Lead scoring engine with explicit decisions (`SCHEDULE_CONSULT` / `REVIEW` / `REJECT`)
+- Monitoring: JSONL metrics + Streamlit dashboard + **Agno native tracing**
 - Evaluation harness + Streamlit UI demo
 
 ## Quick start
 
-```powershell
-# Python 3.11+ recommended
-pip install -r requirements.txt
+**Requires:** Docker Desktop / Docker Compose. Copy `.env.example` → `.env` and set `OPENAI_API_KEY`.
 
-# Configure providers (never commit real keys)
-copy .env.example .env
-# Edit .env and set OPENAI_API_KEY=...
+Host-side Python commands expect the repo root on `PYTHONPATH` (set automatically by `make` targets and Docker). Optional: `pip install -e .`
 
-# Structured DB + seed from kb/
-python db/init_structured_db.py
+```bash
+make setup
+# or: docker compose up --build
+```
 
-# ETL → LanceDB kb_docs (OpenAI text-embedding-3-small by default)
-python -m etl.pipeline
+| Service | URL |
+|---------|-----|
+| Streamlit UI | http://localhost:8501 |
+| FastAPI docs | http://localhost:8000/docs |
+| Postgres | `localhost:5432` |
 
-# UI demo
-python -m streamlit run ui/app.py
+Stop with `make down`. Init runs once (schema seed + ETL) before API/UI start.
 
-# Monitoring dashboard
-python -m streamlit run monitoring/dashboard.py
+### Optional — local Python + Postgres only
 
-# Evaluation with live provider comparison (skips missing API keys)
-python evaluation/run_evaluation.py --limit 5
+For host-side development (edit code without rebuilding images):
 
-# Scenario demo (CLI)
-python ui/demo.py
+```bash
+make setup-local   # pip + Postgres container + schema + ETL
+make ui            # Streamlit on the host
+# optional: make api
+```
+
+Or manually: `docker compose up -d postgres`, then run Python commands against `DATABASE_URL=...@localhost:5432/...`.
+
+Useful targets: `make help`, `make logs`, `make demo`, `make eval`.
+
+### Database
+
+PostgreSQL is **required**. LanceDB and SQLite were removed; vectors live in `kb_docs` with:
+
+| Extension / feature | Role |
+|---------------------|------|
+| **pgvector** | embedding ANN (cosine / HNSW) |
+| **JSONB `payload`** | type-specific fields (`faq`, `sol_rules`, …) |
+| **`text[]` jurisdictions** | GIN-filtered metadata |
+| **pg_trgm** | optional fuzzy text search |
+
+Default URL (docker compose):
+
+```
+DATABASE_URL=postgresql://lexintake:lexintake@localhost:5432/lexintake
 ```
 
 ### Provider configuration (`.env`)
 
 | Variable | Default |
 |----------|---------|
+| `DATABASE_URL` | *(required)* PostgreSQL URL |
 | `LEXINTAKE_EMBEDDING_PROVIDER` | `openai` |
 | `LEXINTAKE_EMBEDDING_MODEL` | `text-embedding-3-small` |
 | `LEXINTAKE_LLM_PROVIDER` | `openai` |
 | `LEXINTAKE_LLM_MODEL` | `gpt-4.1` |
-| `OPENAI_API_KEY` | *(required for live embeddings/LLM)* |
-| `ANTHROPIC_API_KEY` / `GROQ_API_KEY` | optional eval comparison |
+| `OPENAI_API_KEY` | *(required)* |
 
 ## Repository layout
 
 | Path | Purpose |
 |------|---------|
-| `kb/` | Knowledge base (practice areas, SOL, fees, cases, attorneys, clients, FAQs) |
-| `etl/extract/` | Read and flatten KB files into document records |
-| `etl/transform/` | Clean, dedupe, chunk, attach metadata, embed |
-| `etl/load/` | Upsert chunks into LanceDB (`kb_docs`) |
-| `db/` | LanceDB vector store + SQLite (SQLAlchemy/Alembic) |
+| `kb/` | Knowledge base sources |
+| `etl/` | Extract → transform → embed → load into Postgres |
+| `db/` | SQLAlchemy models, Alembic, `pgvector_store.py` |
+| `Dockerfile` / `docker-compose.yml` | Full stack: Postgres + init + API + UI |
+| `Makefile` | `make setup` (default Docker stack) / `make setup-local` |
 | `tools/` | Agno tools |
 | `agents/` | Intake and interview agents |
 | `scoring/` | Lead scoring engine |
 | `monitoring/` | JSONL logger, metrics, Streamlit dashboard |
 | `evaluation/` | Labeled leads, metrics, runner |
-| `ui/` | Streamlit intake UI + demo scenarios |
+| `frontend/` | Streamlit intake UI + demo scenarios |
+| `backend/` | FastAPI REST API |
+| `tests/` | Pytest unit tests (deterministic modules) |
 | `docs/` | Design report, evaluation report, demo script |
 
 ## Agent loop
 
 ```text
-Plan → Retrieve (LanceDB kb_docs) → Tools → Decision / Scoring → Self-check → Respond
+Plan → Retrieve (Postgres kb_docs / pgvector) → Tools → Decision / Scoring → Self-check → Respond
 ```
 
 ## Guardrails
 
 Every user-facing response includes:
 
-1. Legal disclaimer  
-2. No prescriptive legal advice  
-3. KB citations (`chunk_id`, `practice_area`, `doc_type`)  
-4. Escalation when uncertain  
-5. No invented statutes / SOL / attorney profiles  
-
-## Git workflow
-
-| Branch | Purpose |
-|--------|---------|
-| `main` | Protected production (requires CI `smoke-test`) |
-| `develop` | Integration |
-| `feature/*` | Individual features |
-
-CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs offline hash embeddings + demo + eval `--limit 5` on PRs to `main`.
-
-See [docs/DESIGN_REPORT.md](docs/DESIGN_REPORT.md) and [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md).  
-Demo recording script: [docs/DEMO.md](docs/DEMO.md).  
-Full Dutch learning PDF (40+ pages): [docs/LexIntake_Leerboek.pdf](docs/LexIntake_Leerboek.pdf)  
-(regenerate with `python docs/generate_leerboek_pdf.py`).
+1. Legal disclaimer
+2. No prescriptive legal advice
+3. KB citations (`chunk_id`, `practice_area`, `doc_type`)
+4. Escalation when uncertain
+5. No invented statutes / SOL / attorney profiles
 
 ## License
 

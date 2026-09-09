@@ -1,10 +1,90 @@
-"""Intake-phase scoring: lead score, viability, routing, next steps."""
+"""Intake-phase decision: delegates scoring to score_lead (single source of truth)."""
 
 from __future__ import annotations
 
 from typing import Literal
 
 from agents.intake.models import DecisionResult, IntakeFacts, PlanResult, RetrieveResult, ToolPhaseResult
+from scoring.constants import (
+    CONFIDENCE_BASE,
+    CONFIDENCE_CITATION_BOOST,
+    CONFIDENCE_MISSING_FIELD_CAP,
+    CONFIDENCE_MISSING_FIELD_PENALTY,
+    CONFIDENCE_SCORE_BOOST,
+    CONFIDENCE_SCORE_BOOST_MIN,
+    CONFIDENCE_TOOL_BOOST,
+)
+from scoring.context import build_lead_score_context
+from scoring.lead_scoring import score_lead
+
+
+def _derive_next_steps(
+    plan: PlanResult,
+    tools: ToolPhaseResult,
+    scored_decision: str,
+) -> list[str]:
+    steps: list[str] = []
+    sol = tools.sol or {}
+    conflict = tools.conflict or {}
+    estimate = tools.estimate or {}
+    routing = tools.routing or {}
+
+    if sol.get("valid") is True:
+        steps.append("Confirm incident timeline documents for SOL file.")
+    elif sol.get("valid") is False:
+        steps.append("Flag potential SOL issue for attorney review.")
+    elif sol:
+        steps.append("SOL uncertain — verify with attorney.")
+
+    if conflict.get("conflict"):
+        steps.append("Conflict detected — do not discuss case merits; escalate.")
+    if estimate and "insufficient data" in str(estimate.get("explanation") or "").lower():
+        steps.append("Insufficient comps — request more injury/damage detail.")
+
+    attorney = str(routing.get("attorney_name") or "").strip()
+    if attorney:
+        steps.append(f"Schedule intake follow-up with {attorney}.")
+    elif routing:
+        steps.append("No attorney auto-assigned — human routing required.")
+
+    if plan.missing_fields:
+        steps.append("Collect missing intake fields before engagement.")
+
+    if scored_decision == "REJECT":
+        steps.append("Document rejection rationale for compliance review.")
+    elif scored_decision == "REVIEW":
+        steps.append("Route to human intake specialist for review.")
+
+    if not steps:
+        steps.append("Continue structured intake questions.")
+    return steps
+
+
+def _map_viability(decision: str) -> Literal["viable", "not_viable", "needs_review"]:
+    if decision == "SCHEDULE_CONSULT":
+        return "viable"
+    if decision == "REJECT":
+        return "not_viable"
+    return "needs_review"
+
+
+def _estimate_confidence(
+    lead_score: int,
+    retrieval: RetrieveResult,
+    tools: ToolPhaseResult,
+    plan: PlanResult,
+) -> float:
+    confidence = CONFIDENCE_BASE
+    if retrieval.citations:
+        confidence += CONFIDENCE_CITATION_BOOST
+    if any([tools.sol, tools.conflict, tools.estimate, tools.routing]):
+        confidence += CONFIDENCE_TOOL_BOOST
+    if lead_score >= CONFIDENCE_SCORE_BOOST_MIN:
+        confidence += CONFIDENCE_SCORE_BOOST
+    confidence -= CONFIDENCE_MISSING_FIELD_PENALTY * min(
+        len(plan.missing_fields), CONFIDENCE_MISSING_FIELD_CAP
+    )
+    return round(max(0.0, min(1.0, confidence)), 3)
 
 
 def decide(
@@ -14,87 +94,24 @@ def decide(
     tools: ToolPhaseResult,
     *,
     confidence_threshold: float,
+    narrative: str | None = None,
 ) -> DecisionResult:
-    """Lead score, viability, routing, next steps."""
-    del facts
-    score = 50
-    confidence = 0.35
-    next_steps: list[str] = []
-
-    if retrieval.citations:
-        score += min(10, 2 * len(retrieval.citations))
-        confidence += 0.15
-
-    sol = tools.sol or {}
-    if sol:
-        confidence += 0.15
-        if sol.get("valid") is True and sol.get("expires_in", -1) != -1:
-            score += 20
-            next_steps.append("Confirm incident timeline documents for SOL file.")
-        elif sol.get("valid") is False:
-            score -= 35
-            next_steps.append("Flag potential SOL issue for attorney review.")
-        else:
-            score -= 5
-            next_steps.append("SOL uncertain — verify with attorney.")
-
-    conflict = tools.conflict or {}
-    if conflict:
-        confidence += 0.1
-        if conflict.get("conflict"):
-            score -= 30
-            next_steps.append("Conflict detected — do not discuss case merits; escalate.")
-        else:
-            score += 5
-
-    estimate = tools.estimate or {}
-    if estimate:
-        confidence += 0.1
-        est = float(estimate.get("estimate") or 0)
-        explanation = str(estimate.get("explanation") or "")
-        if "insufficient data" in explanation.lower():
-            score -= 5
-            next_steps.append("Insufficient comps — request more injury/damage detail.")
-        elif est > 0:
-            score += 15 if est >= 50_000 else 8
+    """Map canonical score_lead output to agent DecisionResult."""
+    del confidence_threshold  # used by self_check; scoring thresholds are in scoring/constants
+    ctx = build_lead_score_context(facts, plan, retrieval, tools, narrative=narrative)
+    scored = score_lead(ctx)
 
     routing = tools.routing or {}
     attorney = str(routing.get("attorney_name") or "").strip()
     if attorney:
-        score += 10
-        confidence += 0.1
         routing_recommendation = f"Route to {attorney}."
-        next_steps.append(f"Schedule intake follow-up with {attorney}.")
     else:
-        routing_recommendation = str(routing.get("motivation") or "Manual routing required.")
-        next_steps.append("No attorney auto-assigned — human routing required.")
-
-    if plan.missing_fields:
-        score -= 5 * min(len(plan.missing_fields), 4)
-        confidence -= 0.05 * len(plan.missing_fields)
-        next_steps.append("Collect missing intake fields before engagement.")
-
-    score = max(0, min(100, score))
-    confidence = max(0.0, min(1.0, confidence))
-
-    if conflict.get("conflict"):
-        viability: Literal["viable", "not_viable", "needs_review"] = "needs_review"
-    elif sol.get("valid") is False:
-        viability = "not_viable"
-    elif score >= 65 and confidence >= confidence_threshold:
-        viability = "viable"
-    elif score < 40:
-        viability = "not_viable"
-    else:
-        viability = "needs_review"
-
-    if not next_steps:
-        next_steps.append("Continue structured intake questions.")
+        routing_recommendation = str(routing.get("motivation") or scored.explanation[:120])
 
     return DecisionResult(
-        lead_score=score,
-        case_viability=viability,
+        lead_score=scored.lead_score,
+        case_viability=_map_viability(scored.decision),
         routing_recommendation=routing_recommendation,
-        next_steps=next_steps,
-        confidence=round(confidence, 3),
+        next_steps=_derive_next_steps(plan, tools, scored.decision),
+        confidence=_estimate_confidence(scored.lead_score, retrieval, tools, plan),
     )

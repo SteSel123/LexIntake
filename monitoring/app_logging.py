@@ -33,6 +33,17 @@ def get_console_logger(name: str | None = None) -> logging.Logger:
     return logging.getLogger(f"{ROOT_LOGGER_NAME}.{name}")
 
 
+def log_optional_failure(
+    logger: logging.Logger,
+    what: str,
+    exc: BaseException,
+    *,
+    level: int = logging.DEBUG,
+) -> None:
+    """Record a non-fatal side-effect failure instead of a silent ``pass``."""
+    logger.log(level, "Optional %s skipped: %s: %s", what, type(exc).__name__, exc)
+
+
 def reset_logging() -> None:
     """Remove handlers (tests)."""
     global _configured

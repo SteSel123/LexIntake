@@ -1,11 +1,11 @@
-"""LanceDB retrieval for the intake agent."""
+"""KB retrieval for the intake agent (PostgreSQL + pgvector)."""
 
 from __future__ import annotations
 
 from typing import Any, Callable
 
 from agents.intake.models import IntakeFacts, KBCitation, PlanResult, RetrieveResult
-from common import match_practice_area, vector_search
+from tools.common import match_practice_area, vector_search
 
 
 def retrieve(
@@ -15,7 +15,7 @@ def retrieve(
     top_k: int,
     log: Callable[[str, str], None] | None = None,
 ) -> RetrieveResult:
-    """Query LanceDB kb_docs with metadata filters; return top-k chunks."""
+    """Query kb_docs with metadata filters; return top-k chunks."""
     if not plan.need_retrieval:
         if log:
             log("retrieve", "skipped (not needed)")
@@ -53,10 +53,10 @@ def retrieve(
     ]
 
     try:
-        from lancedb_store import ensure_kb_docs
+        from db.pgvector_store import count_rows
         from monitoring.logger import log_retrieval
 
-        total = int(ensure_kb_docs().count_rows())
+        total = count_rows()
         log_retrieval(query, hits=len(collected), total_chunks=total)
     except Exception as exc:  # noqa: BLE001
         if log:

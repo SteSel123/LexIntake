@@ -3,36 +3,11 @@
 from __future__ import annotations
 
 import re
-import sys
 from datetime import date, datetime, timezone
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from agents.intake.models import IntakeFacts  # noqa: E402
-
-_PRACTICE_HINTS = [
-    ("personal injury", "Personal Injury"),
-    ("rear-end", "Personal Injury"),
-    ("slip-and-fall", "Personal Injury"),
-    ("slip and fall", "Personal Injury"),
-    ("collision", "Personal Injury"),
-    ("employment", "Employment Law"),
-    ("discrimination", "Employment Law"),
-    ("immigration", "Immigration"),
-    ("asylum", "Immigration"),
-    ("family", "Family Law"),
-    ("custody", "Family Law"),
-    ("divorce", "Family Law"),
-    ("workers", "Workers’ Compensation"),
-    ("malpractice", "Medical Malpractice"),
-    ("product", "Product Liability"),
-    ("civil rights", "Civil Rights"),
-    ("consumer", "Consumer Protection"),
-    ("criminal", "Criminal Defense"),
-]
+from agents.intake.constants import SENTINEL_NAME, SENTINEL_PARTY
+from agents.intake.models import IntakeFacts
+from tools.common import PRACTICE_TEXT_HINTS
 
 _STATE_RE = re.compile(r"\b(CA|NV|AZ|TX|FL|NY|WA|IL|OR|CO|GA)\b", re.I)
 _MONEY_RE = re.compile(r"\$?\s*([\d,]+(?:\.\d+)?)\s*k\b|\$\s*([\d,]+(?:\.\d+)?)", re.I)
@@ -46,7 +21,7 @@ def _today() -> date:
 
 def infer_practice_area(text: str) -> str | None:
     lower = text.lower()
-    for needle, area in _PRACTICE_HINTS:
+    for needle, area in PRACTICE_TEXT_HINTS:
         if needle in lower:
             return area
     return None
@@ -96,8 +71,8 @@ def infer_name_and_party(text: str) -> tuple[str, str]:
     if "opposing party" in lower:
         m = re.search(r"opposing party(?:\s+is)?\s+([A-Za-z0-9 .,&-]+)", text, flags=re.I)
         if m:
-            return "Demo Prospect", m.group(1).strip(" .")
-    return "Demo Prospect", "Unknown Party"
+            return SENTINEL_NAME, m.group(1).strip(" .")
+    return SENTINEL_NAME, SENTINEL_PARTY
 
 
 def parse_case_description(description: str) -> IntakeFacts:

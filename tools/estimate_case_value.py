@@ -7,7 +7,7 @@ from statistics import mean
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import get_sqlite_connection, logger, match_practice_area, slugify, tool_timer, vector_search
+from tools.common import logger, match_practice_area, query_structured, slugify, tool_timer, vector_search
 
 SEVERITY_FACTORS = {
     "low": 0.75,
@@ -34,22 +34,15 @@ def _severity_factor(severity: str) -> float:
     return SEVERITY_FACTORS.get(slugify(severity), 1.0)
 
 
-def _amounts_from_sqlite(practice_area: str) -> list[float]:
-    conn = get_sqlite_connection()
-    if conn is None:
-        return []
-    try:
-        rows = conn.execute(
-            """
-            SELECT settlement_amount, practice_area
-            FROM past_cases
-            WHERE settlement_amount IS NOT NULL AND settlement_amount > 0
-            ORDER BY id
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-
+def _amounts_from_db(practice_area: str) -> list[float]:
+    rows = query_structured(
+        """
+        SELECT settlement_amount, practice_area
+        FROM past_cases
+        WHERE settlement_amount IS NOT NULL AND settlement_amount > 0
+        ORDER BY id
+        """
+    )
     target = slugify(practice_area)
     amounts = [
         float(row["settlement_amount"])
@@ -105,7 +98,7 @@ def estimate_case_value(payload: EstimateCaseValueInput) -> EstimateCaseValueOut
 def _estimate_case_value_impl(payload: EstimateCaseValueInput) -> EstimateCaseValueOutput:
     try:
         practice_area = match_practice_area(payload.case_type) or payload.case_type
-        amounts = _amounts_from_sqlite(practice_area)
+        amounts = _amounts_from_db(practice_area)
         source = "past_cases"
 
         if not amounts:

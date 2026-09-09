@@ -6,7 +6,7 @@ from typing import Any
 
 import streamlit as st
 
-from components.disclaimer import render_disclaimer, render_escalation_banner
+from frontend.components.disclaimer import render_disclaimer, render_escalation_banner
 
 
 def render_results(payload: dict[str, Any]) -> None:

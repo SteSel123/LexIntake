@@ -3,31 +3,29 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parents[2]
-TOOLS_DIR = ROOT / "tools"
-for path in (str(ROOT), str(TOOLS_DIR)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from check_statute_of_limitations import (  # noqa: E402
+from agents.intake.constants import FALLBACK_TOOL_ALIASES, FALLBACK_TOOL_NAME
+from tools.check_statute_of_limitations import (
     CheckSOLInput,
     check_statute_of_limitations,
 )
-from conflict_check import ConflictCheckInput, conflict_check  # noqa: E402
-from estimate_case_value import EstimateCaseValueInput, estimate_case_value  # noqa: E402
-from route_lead import RouteLeadInput, route_lead  # noqa: E402
-from web_search_fallback import WebSearchFallbackInput, web_search_fallback  # noqa: E402
+from tools.conflict_check import ConflictCheckInput, conflict_check
+from tools.estimate_case_value import EstimateCaseValueInput, estimate_case_value
+from tools.kb_docs_fallback import (
+    KbDocsFallbackInput,
+    WebSearchFallbackInput,
+    kb_docs_fallback,
+    web_search_fallback,
+)
+from tools.route_lead import RouteLeadInput, route_lead
 
 TOOLS = [
     check_statute_of_limitations,
     conflict_check,
     estimate_case_value,
     route_lead,
-    web_search_fallback,
+    kb_docs_fallback,
 ]
 
 ALLOWED_TOOL_NAMES = frozenset(
@@ -36,7 +34,7 @@ ALLOWED_TOOL_NAMES = frozenset(
         "conflict_check",
         "estimate_case_value",
         "route_lead",
-        "web_search_fallback",
+        *FALLBACK_TOOL_ALIASES,
     }
 )
 
@@ -52,7 +50,7 @@ def parse_tool_payload(value: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(value)
             return parsed if isinstance(parsed, dict) else {"raw": value}
-        except Exception:  # noqa: BLE001
+        except json.JSONDecodeError:
             return {"raw": value}
     return {"raw": str(value)}
 
@@ -116,18 +114,20 @@ def run_deterministic(
             result.routing = parse_tool_payload(routing)
             _log(f"routing={result.routing.get('attorney_name')}")
 
-        if "web_search_fallback" in plan.tools_to_call:
-            fallback = web_search_fallback.entrypoint(
-                WebSearchFallbackInput(
+        planned_fallback = FALLBACK_TOOL_ALIASES.intersection(plan.tools_to_call or [])
+        if planned_fallback:
+            fallback = kb_docs_fallback.entrypoint(
+                KbDocsFallbackInput(
                     query=plan.retrieval_query or case_type or "intake guidance"
                 )
             )
             result.web_fallback = parse_tool_payload(fallback)
-            _log("web_search_fallback used")
+            _log(f"{FALLBACK_TOOL_NAME} used")
     except Exception as exc:  # noqa: BLE001
         _log(f"error={exc}")
 
     return result
+
 
 __all__ = [
     "ALLOWED_TOOL_NAMES",
@@ -138,10 +138,12 @@ __all__ = [
     "EstimateCaseValueInput",
     "RouteLeadInput",
     "TOOLS",
+    "KbDocsFallbackInput",
     "WebSearchFallbackInput",
     "check_statute_of_limitations",
     "conflict_check",
     "estimate_case_value",
     "route_lead",
+    "kb_docs_fallback",
     "web_search_fallback",
 ]

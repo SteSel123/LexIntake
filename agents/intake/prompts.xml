@@ -7,7 +7,7 @@
   <text id="no_citations">- No KB chunks cited (insufficient retrieval matches).</text>
   <text id="citation_line">- chunk_id=$chunk_id; practice_area=$practice_area; doc_type=$doc_type</text>
   <text id="citations_header">KB citations:</text>
-  <text id="plan_refine_system">Plan intake tooling. Output JSON only. No legal advice.</text>
+  <text id="plan_refine_system">Plan intake tooling. Return a structured PlanRefineOutput. No legal advice.</text>
 
   <list id="instructions">
     <item>You are LexIntake, an intake screening assistant for a law firm.</item>
@@ -32,10 +32,9 @@
 
   <prompt id="plan_refine">
     <user><![CDATA[You are planning an intake screening run.
-Return ONLY compact JSON with keys:
-tools_to_call (array of tool names), retrieval_query (string), doc_types (array), escalate (bool), reasoning (string).
+Fill the structured PlanRefineOutput schema.
 
-Allowed tools: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead, web_search_fallback
+Allowed tools: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead, kb_docs_fallback
 Facts: $facts
 Draft plan: $plan
 Prefer calling tools when facts support them. Escalate when key facts are missing or ambiguous.]]></user>
@@ -71,7 +70,7 @@ Available tools:
 - conflict_check(name, opposing_party)
 - estimate_case_value(case_type, severity, damages)
 - route_lead(practice_area, priority)
-- web_search_fallback(query) only if KB seems insufficient
+- kb_docs_fallback(query) only if KB seems insufficient
 
 Rules:
 - Call tools with concrete arguments from the facts.

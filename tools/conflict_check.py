@@ -7,7 +7,7 @@ from typing import Any
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import get_sqlite_connection, logger, tool_timer
+from tools.common import logger, query_structured, tool_timer
 
 
 class ConflictCheckInput(BaseModel):
@@ -42,31 +42,21 @@ def _normalize(value: str) -> str:
     ),
 )
 def conflict_check(payload: ConflictCheckInput) -> ConflictCheckOutput:
-    """Case-insensitive conflict search over SQLite clients."""
+    """Case-insensitive conflict search over structured clients."""
     with tool_timer("conflict_check"):
         return _conflict_check_impl(payload)
 
 
 def _conflict_check_impl(payload: ConflictCheckInput) -> ConflictCheckOutput:
     try:
-        conn = get_sqlite_connection()
-        if conn is None:
-            return ConflictCheckOutput(
-                conflict=False,
-                details=[],
-                explanation="Fallback: structured DB unavailable. Assume no conflict; verify manually.",
-            )
-
-        rows = conn.execute(
+        rows = query_structured(
             "SELECT id, name, email, phone, state FROM clients ORDER BY name"
-        ).fetchall()
-        conn.close()
-
+        )
         if not rows:
             return ConflictCheckOutput(
                 conflict=False,
                 details=[],
-                explanation="Clients table is empty. No conflicts found; database may not be seeded.",
+                explanation="Clients table is empty or unavailable. No conflicts found; verify manually if needed.",
             )
 
         targets = {

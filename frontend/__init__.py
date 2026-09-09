@@ -1,0 +1,1 @@
+"""LexIntake Streamlit frontend package."""

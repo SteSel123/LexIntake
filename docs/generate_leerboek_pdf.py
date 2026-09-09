@@ -73,19 +73,20 @@ class Leerboek(FPDF):
             7,
             "Alles wat je moet weten over de capstone-opdracht:\n"
             "Agentic RAG intake screening voor advocatenkantoren\n"
-            "met Agno, LanceDB, OpenAI, Streamlit en CI.",
+            "met Agno, PostgreSQL/pgvector, FastAPI, Streamlit, Docker en CI.",
             align="C",
         )
         self.ln(4)
         self.flow(
-            ["Prospect", "UI", "Agent", "Tools+RAG", "Beslissing"],
+            ["Prospect", "UI/API", "Agent", "Tools+RAG", "Beslissing"],
             title="Grote lijn van het systeem",
         )
         self.layers(
             [
-                ("UI", "Streamlit interview + quick analysis"),
+                ("UI", "Streamlit (frontend/) interview + quick analysis"),
+                ("API", "FastAPI (backend/) REST endpoints"),
                 ("Agent", "Plan / Retrieve / Tools / Decide / Self-check"),
-                ("Data", "LanceDB kb_docs + SQLite entities"),
+                ("Data", "PostgreSQL: kb_docs (pgvector) + entities"),
                 ("KB/ETL", "kb/ -> chunk -> embed -> load"),
             ],
             title="Lagenarchitectuur",
@@ -308,10 +309,11 @@ class Leerboek(FPDF):
         elif "architectuur" in t or "grote plaatje" in t:
             self.layers(
                 [
-                    ("UI", "Streamlit"),
+                    ("UI", "Streamlit (frontend/)"),
+                    ("API", "FastAPI (backend/)"),
                     ("Agent", "IntakeAgent (Agno)"),
                     ("Tools", "SOL / conflict / value / route"),
-                    ("Data", "LanceDB + SQLite"),
+                    ("Data", "PostgreSQL pgvector + entities"),
                     ("KB/ETL", "kb/ -> embeddings"),
                 ],
                 title="Architectuurlagen",
@@ -320,21 +322,26 @@ class Leerboek(FPDF):
                 ["Plan", "Retrieve", "Tools", "Decide", "Self-check", "Respond"],
                 title="Agent-loop",
             )
-        elif "repository" in t or "map voor map" in t:
+        elif "repository" in t or "map voor map" in t or "bestandsgids" in t:
             self.tree(
                 [
                     "LexIntake/",
-                    "  kb/          knowledge base",
-                    "  etl/extract  etl/transform  etl/load",
-                    "  db/          LanceDB + SQLite",
-                    "  agents/      intake/ + interview/",
-                    "  tools/       Agno tools",
-                    "  scoring/     score_lead",
-                    "  monitoring/  metrics + Agno traces",
-                    "  evaluation/  leads + metrics",
-                    "  ui/          Streamlit + demo",
-                    "  docs/        reports + leerboek",
-                    "  .github/     CI smoke-test",
+                    "  kb/              synthetische kennisbank (JSON/MD)",
+                    "  etl/             extract -> transform -> load",
+                    "  db/              Postgres models, pgvector, migrations",
+                    "  agents/          intake-agent + interview-agent + llm",
+                    "  tools/           Agno @tool functies",
+                    "  scoring/         deterministische lead scoring",
+                    "  backend/         FastAPI routes + services",
+                    "  frontend/        Streamlit UI + demo",
+                    "  monitoring/      metrics, dashboard, Agno traces",
+                    "  evaluation/      labeled leads + harness",
+                    "  scripts/         docker_init, ensure_env",
+                    "  docs/            reports + dit leerboek",
+                    "  docker-compose   Postgres + init + API + UI",
+                    "  tests/           pytest unit tests",
+                    "  Makefile         make setup / test / ui / api / eval",
+                    "  .github/         CI smoke-test",
                 ],
                 title="Repo-boom",
             )
@@ -361,34 +368,34 @@ class Leerboek(FPDF):
                 ["Re-runnable", "Idempotent (chunk_id upsert)", "Incremental (reuse embeds)"],
                 title="Verplichte ETL-eigenschappen",
             )
-        elif "embedding" in t or "hash vs" in t:
+        elif "embedding" in t:
             self.matrix(
                 ["Pad", "Model", "Dims", "API?"],
                 [
                     ["Live", "text-emb-3-small", "1536", "Ja"],
-                    ["CI", "hash-v1", "256", "Nee"],
                 ],
                 title="Embedding-modi",
             )
             self.flow(
-                ["Tekst", "Embedder", "Vector", "LanceDB"],
+                ["Tekst", "Embedder", "Vector", "Postgres kb_docs"],
                 title="Van tekst naar vector",
             )
-        elif "lancedb" in t or "vector database" in t:
+        elif "postgres" in t or "pgvector" in t or "vector database" in t:
             self.layers(
                 [
                     ("chunk_id", "Primary key voor upsert"),
                     ("text", "Chunk inhoud"),
-                    ("embedding", "Fixed-size float vector"),
-                    ("metadata", "practice_area / jurisdictions / doc_type"),
+                    ("embedding", "pgvector (1536 dims, HNSW)"),
+                    ("payload", "JSONB type-specifieke velden"),
+                    ("jurisdictions", "text[] met GIN-filter"),
                 ],
-                title="kb_docs schema",
+                title="kb_docs schema (PostgreSQL)",
             )
             self.flow(
-                ["Query", "Embed", "Search top_k", "Filter meta", "Citations"],
+                ["Query", "Embed", "pgvector ANN", "Filter meta", "Citations"],
                 title="Retrieval-pad",
             )
-        elif "sqlite" in t or "structured database" in t:
+        elif "entities" in t or "structured database" in t or "gestructureerde" in t:
             self.matrix(
                 ["Tabel", "Tool", "Nut"],
                 [
@@ -396,7 +403,17 @@ class Leerboek(FPDF):
                     ["attorneys", "route_lead", "Toewijzing"],
                     ["past_cases", "estimate_value", "Comps"],
                 ],
-                title="SQLite vs tools",
+                title="Postgres-tabellen vs tools",
+            )
+        elif "docker" in t or "fastapi" in t or "backend" in t:
+            self.layers(
+                [
+                    ("postgres", "pgvector DB container"),
+                    ("init", "schema seed + ETL (eenmalig)"),
+                    ("api", "FastAPI op :8000"),
+                    ("ui", "Streamlit op :8501"),
+                ],
+                title="Docker Compose services",
             )
         elif "agno tools" in t or "sol, conflict" in t:
             self.flow(
@@ -431,8 +448,8 @@ class Leerboek(FPDF):
             )
         elif "lead scoring" in t or "beslissingen" in t:
             self.flow(
-                ["Context", "score_lead()", "Score 0-100", "Decision"],
-                title="Scoring-pad",
+                ["Facts+Tools", "context.py", "score_lead()", "Decision"],
+                title="Unified scoring-pad",
             )
             self.matrix(
                 ["Decision", "Betekenis"],
@@ -500,7 +517,7 @@ class Leerboek(FPDF):
                 title="Git + CI flow",
             )
             self.vflow(
-                ["checkout", "pip install", "init DB", "load KB(hash)", "demo+eval", "artifacts"],
+                ["checkout", "pip install", "init DB", "load KB", "demo+eval", "artifacts"],
                 title="CI smoke-test stappen",
             )
         elif "systeem starten" in t or "stap-voor-stap" in t:
@@ -518,9 +535,9 @@ class Leerboek(FPDF):
                 ["Symptoom", "Check"],
                 [
                     ["Import error", "venv + requirements"],
-                    ["Key missing", ".env / local mode"],
+                    ["Key missing", ".env OPENAI_API_KEY"],
                     ["Dim mismatch", "herlaad KB"],
-                    ["CI rood", "hash+local offline"],
+                    ["CI rood", "secret + demo + eval"],
                 ],
                 title="Debug-matrix",
             )
@@ -546,7 +563,7 @@ class Leerboek(FPDF):
             )
         elif "conflict of interest" in t:
             self.flow(
-                ["ACME+Employment", "Map client", "SQLite hit", "REJECT+escalate"],
+                ["ACME+Employment", "Map client", "Postgres hit", "REJECT+escalate"],
                 title="Conflict-pad",
             )
         elif "onzekere immigratie" in t:
@@ -561,15 +578,15 @@ class Leerboek(FPDF):
             )
         elif "dataflow" in t:
             self.flow(
-                ["Disk KB", "ETL", "LanceDB", "Runtime", "UI JSON"],
+                ["Disk KB", "ETL", "Postgres", "Agent", "UI/API JSON"],
                 title="Dataflow 30.000 ft",
             )
         elif "provider-agnostic" in t:
             self.matrix(
                 ["Laag", "Keuze"],
                 [
-                    ["LLM", "openai/anthropic/groq/local"],
-                    ["Embed", "openai/hash"],
+                    ["LLM", "openai/anthropic/groq"],
+                    ["Embed", "openai"],
                     ["Logic", "onveranderd"],
                 ],
                 title="Provider-scheiding",
@@ -594,20 +611,22 @@ class Leerboek(FPDF):
                 ["Corrective RAG", "Multi-agent", "HITL", "Memory"],
                 title="Stretch roadmap",
             )
-        elif "cheatsheet: commands" in t:
+        elif "cheatsheet: commands" in t or "unit test" in t or "code-kwaliteit" in t:
             self.vflow(
-                ["install", "init DB", "load KB", "demo", "UI", "eval"],
+                ["setup", "test", "init DB", "ETL", "demo", "UI", "eval"],
                 title="Command-volgorde",
             )
         elif "cheatsheet: bestanden" in t:
             self.tree(
                 [
-                    "agents/intake/agent.py  <- loop",
-                    "tools/*.py             <- acties",
-                    "scoring/lead_scoring.py",
-                    "etl/pipeline.py",
-                    "ui/app.py",
-                    ".github/workflows/ci.yml",
+                    "agents/intake/agent.py     <- agent loop",
+                    "db/pgvector_store.py       <- vector search",
+                    "tools/*.py                 <- SOL/conflict/value/route",
+                    "backend/api/main.py        <- FastAPI entry",
+                    "frontend/app.py            <- Streamlit UI",
+                    "docker-compose.yml         <- stack",
+                    "etl/pipeline.py            <- ETL",
+                    ".github/workflows/ci.yml   <- CI",
                 ],
                 title="Bestanden om aan te wijzen",
             )
@@ -616,9 +635,9 @@ class Leerboek(FPDF):
                 ["Vraag", "Focus"],
                 [
                     ["RAG vs LLM?", "Grounding"],
-                    ["SQLite waarom?", "Exact match"],
+                    ["Postgres entities waarom?", "Exact match"],
                     ["5 fasen?", "Loop"],
-                    ["CI offline?", "hash/local"],
+                    ["CI keys?", "OPENAI_API_KEY secret"],
                 ],
                 title="Zelftest-kaart",
             )
@@ -710,29 +729,32 @@ def build() -> Path:
         "3. Capstone-eisen: wat moet je opleveren?",
         "4. Architectuur: het grote plaatje",
         "5. Repository-structuur map voor map",
-        "6. Knowledge Base (kb/) bouwen",
-        "7. ETL-pipeline stap voor stap",
-        "8. Embeddings: hash vs OpenAI",
-        "9. Vector database LanceDB",
-        "10. Structured database SQLite",
-        "11. Agno tools (SOL, conflict, value, route)",
-        "12. De Intake Agent (plan → retrieve → tools → decide)",
-        "13. Multi-turn interview met prospects",
-        "14. Lead scoring & beslissingen",
-        "15. Guardrails (juridische veiligheid)",
-        "16. Observability & Agno Monitoring",
-        "17. Evaluation harness",
-        "18. Streamlit UI & demo",
-        "19. Configuratie met .env",
-        "20. Git-workflow, PR’s en CI",
-        "21. Stap-voor-stap: systeem starten",
-        "22. Demo-video voorbereiden",
-        "23. Troubleshooting & veelgemaakte fouten",
-        "24. Oefeningen om te oefenen",
-        "25. Glossarium & checklist oplevering",
-        "26. Werkvoorbeelden (PI, SOL, conflict, uncertain)",
-        "27. Presentatiescript, dataflow, providers, ethiek",
-        "28. Cheatsheets, zelftest en FAQ-verdieping",
+        "6. Bestandsgids: wat doet elk bestand?",
+        "7. Knowledge Base (kb/) bouwen",
+        "8. ETL-pipeline stap voor stap",
+        "9. Embeddings: OpenAI",
+        "10. PostgreSQL + pgvector (kb_docs)",
+        "11. Gestructureerde entiteiten in PostgreSQL",
+        "12. Docker Compose & FastAPI backend",
+        "13. Agno tools (SOL, conflict, value, route)",
+        "14. De Intake Agent (plan → retrieve → tools → decide)",
+        "15. Multi-turn interview met prospects",
+        "16. Lead scoring & beslissingen",
+        "17. Guardrails (juridische veiligheid)",
+        "18. Observability & Agno Monitoring",
+        "19. Evaluation harness",
+        "20. Streamlit UI & demo",
+        "21. Configuratie met .env",
+        "22. Git-workflow, PR’s en CI",
+        "23. Stap-voor-stap: systeem starten",
+        "24. Demo-video voorbereiden",
+        "25. Troubleshooting & veelgemaakte fouten",
+        "26. Oefeningen om te oefenen",
+        "27. Glossarium & checklist oplevering",
+        "28. Werkvoorbeelden (PI, SOL, conflict, uncertain)",
+        "29. Presentatiescript, dataflow, providers, ethiek",
+        "30. Unit tests & code-kwaliteit",
+        "31. Cheatsheets, zelftest en FAQ-verdieping",
     ]
     pdf.set_font("Body", "", 11)
     for line in toc:
@@ -801,7 +823,7 @@ def build() -> Path:
         (
             "Vector database",
             "Database geoptimaliseerd om ‘meest gelijkende’ embeddings te zoeken "
-            "(semantische search). Bij LexIntake: LanceDB.",
+            "(semantische search). Bij LexIntake: PostgreSQL met pgvector-extensie.",
         ),
         (
             "Chunk",
@@ -851,7 +873,7 @@ def build() -> Path:
             "Guardrails in elk antwoord",
             "Observability (tokens, cost, latency, tools, retrieval, escalaties, case value)",
             "Git: main/develop/feature/*, PRs, protected main, GitHub Actions (aanbevolen)",
-            "Stack: Agno + LLM + embeddings + vector DB + SQLite + Streamlit + monitoring",
+            "Stack: Agno + LLM + embeddings + PostgreSQL/pgvector + FastAPI + Streamlit + Docker + pytest + monitoring",
             "Evaluation op ~20–30 labeled leads (8 dimensies)",
         ]
     )
@@ -887,68 +909,200 @@ def build() -> Path:
     # 4
     pdf.h1("Architectuur: het grote plaatje")
     pdf.p(
-        "Denk in lagen. Een prospect praat met de UI. De UI praat met de IntakeAgent. "
-        "De agent haalt kennis uit LanceDB, roept tools aan die SQLite/KB gebruiken, "
+        "Denk in lagen. Een prospect praat met de Streamlit UI (frontend/) of roept "
+        "de FastAPI backend aan. Beide praten met de IntakeAgent. De agent haalt kennis "
+        "uit PostgreSQL kb_docs (pgvector), roept tools aan die entities/KB gebruiken, "
         "scoort de lead, checkt guardrails, en geeft een uitleg terug."
     )
     pdf.code(
         "Prospect / paralegal\n"
         "        |\n"
-        "   Streamlit UI (interview of quick analysis)\n"
+        "   Streamlit UI (frontend/)  —  FastAPI (backend/)\n"
         "        |\n"
-        "   IntakeAgent (Agno)\n"
+        "   IntakeAgent (agents/intake/)\n"
         "   plan -> retrieve -> tools -> decide -> self-check -> respond\n"
         "      |         |         |\n"
-        "   LanceDB   Agno tools  Lead scoring\n"
-        "   kb_docs   SOL/conflict/value/route\n"
-        "      ^\n"
+        "   Postgres   Agno tools  Lead scoring\n"
+        "   kb_docs    SOL/conflict/value/route\n"
+        "   (pgvector)     |\n"
+        "      ^      clients / attorneys / past_cases\n"
         "   ETL (kb/ -> chunks -> embeddings)\n"
-        "   SQLite: clients, attorneys, past_cases"
+        "   Docker: postgres + init + api + ui"
     )
-    pdf.h2("Twee modi")
+    pdf.h2("Live pad")
     pdf.bullet(
         [
-            "Live modus: OpenAI embeddings + gpt-4.1 (echte semantiek + uitleg)",
-            "CI/offline modus: hash-embeddings + deterministische agent (geen API-keys)",
+            "OpenAI embeddings + gpt-4.1 (echte semantiek + uitleg)",
+            "OPENAI_API_KEY is verplicht voor ETL, UI, demo, evaluatie en CI",
         ]
     )
     pdf.p(
-        "Dit is bewust zo gebouwd: je kunt lokaal/demo’s met keys draaien, terwijl "
-        "GitHub Actions altijd offline en reproduceerbaar blijft."
+        "GitHub Actions gebruikt dezelfde live providers via de repository secret "
+        "OPENAI_API_KEY."
     )
     
 
     # 5
     pdf.h1("Repository-structuur map voor map")
+    pdf.p(
+        "LexIntake is opgebouwd als een monorepo: elke map heeft één duidelijke rol. "
+        "Data stroomt van kb/ via etl/ naar PostgreSQL; runtime-logica zit in agents/, "
+        "tools/ en scoring/; presentatie in frontend/ en backend/."
+    )
+    pdf.tree(
+        [
+            "LexIntake/",
+            "├── kb/                 # brondata (JSON + Markdown)",
+            "├── etl/                # extract → transform → load",
+            "│   ├── extract/        # leest kb-bestanden",
+            "│   ├── transform/      # clean, chunk, embed",
+            "│   └── load/             # schrijft naar Postgres",
+            "├── db/                 # database-laag",
+            "│   ├── models.py       # SQLAlchemy entities",
+            "│   ├── pgvector_store  # kb_docs vector search",
+            "│   ├── engine.py       # Postgres connectie",
+            "│   └── migrations/     # Alembic schema",
+            "├── agents/             # AI-agents",
+            "│   ├── intake/         # IntakeAgent (kern)",
+            "│   ├── interview/      # multi-turn gesprek",
+            "│   ├── llm.py          # provider-agnostic LLM",
+            "│   └── shared/         # Agno factory helpers",
+            "├── tools/              # Agno @tool functies",
+            "├── scoring/            # deterministische lead scoring",
+            "├── backend/            # FastAPI REST API",
+            "│   ├── api/routes/     # /health, /v1/intake, /v1/interview",
+            "│   └── services/       # business logic wrappers",
+            "├── frontend/           # Streamlit UI + demo",
+            "│   └── components/     # header, disclaimer, result viewer",
+            "├── monitoring/         # metrics, dashboard, Agno traces",
+            "├── evaluation/         # labeled leads + harness",
+            "├── scripts/            # docker_init, ensure_env",
+            "├── docs/               # reports + dit leerboek",
+            "├── docker-compose.yml  # Postgres + init + API + UI",
+            "├── Dockerfile          # app image",
+            "├── tests/              # pytest unit tests (16+)",
+            "├── pyproject.toml      # pytest pythonpath + package config",
+            "├── Makefile            # make setup / test / ui / api / eval",
+            "├── config.py           # .env configuratie",
+            "└── .github/workflows/  # CI: pytest + smoke-test",
+        ],
+        title="Volledige repo-boom",
+    )
     folders = [
         ("kb/", "Synthetische kennisbank (JSON/MD). Bron van waarheid voor intake-regels."),
-        ("etl/", "Pipeline die KB omzet naar chunks + embeddings en laadt."),
-        ("db/", "LanceDB (vectoren) + SQLite (gestructureerde entities) + load scripts."),
-        ("tools/", "Agno @tool functies: SOL, conflict, value, route, fallback."),
-        ("agents/", "intake/ (IntakeAgent + fact parsing), interview/, llm.py."),
-        ("scoring/", "Deterministische score_lead() → beslissing + priority."),
+        ("etl/", "Pipeline: extract → clean → dedupe → chunk → metadata → embed → load."),
+        ("db/", "PostgreSQL: SQLAlchemy models, pgvector store, Alembic migrations, seed scripts."),
+        ("agents/", "IntakeAgent (plan/retrieve/tools/decide), InterviewAgent, LLM wiring."),
+        ("tools/", "Agno @tool functies: SOL, conflict, value, route, web fallback."),
+        ("scoring/", "score_lead(), context builder, named constants (single source of truth)."),
+        ("tests/", "Pytest: scoring, guardrails, fact_parse, conflict_check (geen API key)."),
+        ("backend/", "FastAPI REST API (intake analyze, interview sessions, health)."),
+        ("frontend/", "Streamlit UI (interview + quick analysis) + CLI demo scenarios."),
         ("monitoring/", "JSONL logger, metrics, Streamlit dashboard, Agno traces."),
-        ("evaluation/", "leads.csv, metrics, run_evaluation.py, reports logs."),
-        ("ui/", "Streamlit app + demo scenarios + runner."),
+        ("evaluation/", "leads.csv, eval_metrics, run_evaluation.py, report logs."),
+        ("scripts/", "docker_init.py (container bootstrap), ensure_env.py (.env helper)."),
         ("docs/", "Design report, evaluation report, demo script, dit leerboek."),
-        (".github/workflows/", "CI smoke-test op pull requests naar main."),
     ]
     for name, desc in folders:
         pdf.h3(name)
         pdf.p(desc)
-    pdf.h2("Belangrijke losse bestanden")
+    pdf.h2("Root-bestanden")
     pdf.bullet(
         [
-            "README.md — setup en overzicht",
+            "README.md — setup, architectuur, quick start",
             "requirements.txt — Python dependencies",
-            "config.py — leest .env (providers, models, keys)",
+            "config.py — leest .env (DATABASE_URL, providers, models, keys)",
             ".env.example — template zonder geheimen",
-            ".env — jouw lokale secrets (nooit committen)",
+            "docker-compose.yml — Postgres + init + API + UI containers",
+            "Makefile — make setup, test, ui, api, demo, eval, dashboard",
+            "pyproject.toml — pytest config + pip install -e . support",
+            "Dockerfile — Python app image (PYTHONPATH=/app)",
         ]
     )
-    
 
-    # 6
+    # 6 — Bestandsgids
+    pdf.h1("Bestandsgids: wat doet elk bestand?")
+    pdf.p(
+        "Deze tabel is je navigatiekaart. Als je een bug zoekt of iets moet uitleggen "
+        "tijdens de demo, wijs je naar het juiste bestand."
+    )
+    file_guide = [
+        ["config.py", "Laadt .env: DATABASE_URL, LLM/embedding providers, API keys"],
+        ["db/engine.py", "PostgreSQL connectie + pgvector/pg_trgm extensies"],
+        ["db/models.py", "SQLAlchemy: Client, Attorney, PastCase tabellen"],
+        ["db/pgvector_store.py", "kb_docs upsert + vector search (cosine/HNSW)"],
+        ["db/schema.py", "kb_docs DDL + embedding dimensies"],
+        ["db/init_structured_db.py", "Maakt tabellen + seed vanuit kb/*.json"],
+        ["db/structured_db.py", "CRUD helpers voor entities (clients, attorneys)"],
+        ["db/migrations/", "Alembic versies voor schema-wijzigingen"],
+        ["etl/pipeline.py", "Hoofd-ETL: orchestratie extract→load"],
+        ["etl/extract/documents.py", "Leest alle kb/ bestanden in als documenten"],
+        ["etl/transform/clean.py", "Normaliseert whitespace/rommel"],
+        ["etl/transform/deduplicate.py", "content_hash deduplicatie"],
+        ["etl/transform/chunk.py", "Splitst tekst, genereert chunk_id"],
+        ["etl/transform/metadata.py", "Voegt practice_area, doc_type, jurisdictions toe"],
+        ["etl/transform/embeddings.py", "OpenAI embedder via Agno adapter"],
+        ["etl/load/vector_db.py", "Upsert chunks naar kb_docs in Postgres"],
+        ["agents/intake/agent.py", "IntakeAgent: plan→retrieve→tools→decide→check→respond"],
+        ["agents/intake/retrieve.py", "pgvector search + metadata filters → citaties"],
+        ["agents/intake/fact_parse.py", "Parse ruwe tekst naar IntakeFacts"],
+        ["agents/intake/decide.py", "Adapter: score_lead → DecisionResult + next_steps"],
+        ["scoring/context.py", "build_lead_score_context() — gedeelde scoring-input"],
+        ["scoring/constants.py", "Named thresholds (SCORE_SCHEDULE_MIN, etc.)"],
+        ["agents/intake/guardrails.py", "Disclaimer, citaties, escalatie checks"],
+        ["agents/intake/models.py", "Pydantic: IntakeFacts, PlanResult, Response"],
+        ["agents/intake/tools.py", "Tool-aanroep wiring (agentic + fallback)"],
+        ["agents/intake/prompts.xml", "Systeem-instructies voor de agent"],
+        ["agents/interview/agent.py", "InterviewSession: multi-turn Q&A → screening"],
+        ["agents/llm.py", "build_model(): OpenAI/Anthropic/Groq provider switch"],
+        ["agents/shared/make_agent.py", "Agno Agent factory + tracing setup"],
+        ["tools/check_statute_of_limitations.py", "SOL-check op sol_tables.json"],
+        ["tools/conflict_check.py", "Zoekt client match in Postgres clients"],
+        ["tools/estimate_case_value.py", "Case value schatting via past_cases comps"],
+        ["tools/route_lead.py", "Attorney routing op specialisatie/availability"],
+        ["tools/web_search_fallback.py", "Lokale fallback als KB tekortschiet"],
+        ["tools/common.py", "Gedeelde helpers (practice area match, vector_search)"],
+        ["scoring/lead_scoring.py", "score_lead(): qualified, score, decision"],
+        ["backend/api/main.py", "FastAPI app entrypoint + CORS"],
+        ["backend/api/routes/intake.py", "POST /v1/intake/analyze"],
+        ["backend/api/routes/interview.py", "Interview session endpoints"],
+        ["backend/api/routes/health.py", "GET /health"],
+        ["backend/api/schemas.py", "Pydantic request/response modellen"],
+        ["backend/api/session_store.py", "In-memory interview sessie opslag"],
+        ["backend/services/intake_service.py", "Gedeelde service: agent + score_lead payload"],
+        ["frontend/app.py", "Streamlit: interview tab + quick analysis tab"],
+        ["frontend/demo.py", "CLI demo: 4 scenario's (PI, SOL, conflict, uncertain)"],
+        ["frontend/runner.py", "Shared runner voor UI en demo"],
+        ["frontend/components/", "UI onderdelen: header, disclaimer, result viewer"],
+        ["monitoring/logger.py", "JSONL event logging + PII sanitization"],
+        ["monitoring/metrics.py", "Tokens, latency, tool calls, scores aggregatie"],
+        ["monitoring/dashboard.py", "Streamlit metrics + Agno trace viewer"],
+        ["monitoring/agno_tracing.py", "Agno OpenTelemetry tracing setup"],
+        ["evaluation/run_evaluation.py", "Draait agent op labeled leads, meet 8 dimensies"],
+        ["evaluation/leads.csv", "~30 synthetische gelabelde test-leads"],
+        ["evaluation/eval_metrics.py", "Metric berekeningen per dimensie"],
+        ["scripts/docker_init.py", "Container init: init_structured_db + etl.pipeline"],
+        ["scripts/ensure_env.py", "Maakt .env aan vanuit .env.example indien nodig"],
+        ["tests/", "Pytest suite: lead_scoring, decide, guardrails, fact_parse, context"],
+        ["pyproject.toml", "pytest pythonpath + setuptools package discovery"],
+        [".github/workflows/ci.yml", "CI: pytest, init DB, ETL, demo, eval --limit 5"],
+    ]
+    pdf.matrix(
+        ["Bestand", "Functie"],
+        file_guide,
+        title="Complete bestandsgids",
+    )
+    pdf.h2("Dataflow tussen bestanden")
+    pdf.flow(
+        ["kb/*.json", "etl/pipeline.py", "pgvector_store.py", "retrieve.py", "agent.py", "frontend/app.py"],
+        title="Van brondata tot UI-antwoord",
+    )
+    pdf.note(
+        "Imports draaien vanuit repo-root via PYTHONPATH (Makefile/Docker/CI zetten dit). "
+        "Geen sys.path-hacks meer in library code. Optioneel: pip install -e ."
+    )
+
+    # 7
     pdf.h1("Knowledge Base (kb/) bouwen")
     pdf.p(
         "De KB is synthetisch maar realistisch. Ze bestaat zodat de agent iets heeft om "
@@ -981,7 +1135,7 @@ def build() -> Path:
     )
     pdf.note(
         "Wijzig je de KB, dan moet je embeddings opnieuw laden "
-        "(python -m etl.pipeline) zodat LanceDB synchroon blijft."
+        "(python -m etl.pipeline) zodat kb_docs in Postgres synchroon blijft."
     )
     
 
@@ -997,8 +1151,8 @@ def build() -> Path:
         ("3. Deduplicate", "Zelfde inhoud → één document via content_hash."),
         ("4. Chunk", "Splits lange teksten in stukken met stabiele chunk_id."),
         ("5. Metadata", "Voeg practice_area, jurisdictions, doc_type, timestamps toe."),
-        ("6. Embeddings", "Maak vectoren (OpenAI of hash)."),
-        ("7. Load", "Upsert naar LanceDB kb_docs (en optioneel JSON store)."),
+        ("6. Embeddings", "Maak vectoren met OpenAI text-embedding-3-small."),
+        ("7. Load", "Upsert naar PostgreSQL kb_docs via pgvector_store.py."),
     ]
     for t, b in steps:
         pdf.h3(t)
@@ -1013,33 +1167,24 @@ def build() -> Path:
     )
     pdf.h2("Commands")
     pdf.code(
-        "python db/init_structured_db.py\n"
+        "python -m db.init_structured_db\n"
         "python -m etl.pipeline"
     )
     
 
     # 8
-    pdf.h1("Embeddings: hash vs OpenAI")
+    pdf.h1("Embeddings: OpenAI")
     pdf.p(
-        "Embeddings zetten tekst om naar getallen. LexIntake heeft twee implementaties "
-        "achter dezelfde interface get_embedder()."
+        "Embeddings zetten tekst om naar getallen. LexIntake gebruikt OpenAI "
+        "text-embedding-3-small via get_embedder()."
     )
-    pdf.h2("OpenAI text-embedding-3-small (default live)")
+    pdf.h2("OpenAI text-embedding-3-small")
     pdf.bullet(
         [
             "Dimensies: 1536",
             "Echte semantische gelijkenis (“rear-end collision” ≈ “car accident injury”)",
             "Vereist OPENAI_API_KEY",
             "Gebruikt via Agno OpenAIEmbedder adapter in etl/transform/embeddings.py",
-        ]
-    )
-    pdf.h2("Hash embedder (CI / offline)")
-    pdf.bullet(
-        [
-            "Dimensies: 256",
-            "Deterministisch uit tokens (geen API)",
-            "Goed genoeg voor smoke tests, minder ‘slim’ semantisch",
-            "Gezet via LEXINTAKE_EMBEDDING_PROVIDER=hash",
         ]
     )
     pdf.h2(".env voorbeeld")
@@ -1050,64 +1195,116 @@ def build() -> Path:
         "OPENAI_API_KEY=sk-..."
     )
     pdf.note(
-        "Wissel je van 256 (hash) naar 1536 (OpenAI), dan herbout LanceDB de tabel "
+        "Wissel je van embedding-dimensie, dan moet je kb_docs opnieuw laden "
         "vanwege dimensie-mismatch. Dat is normaal."
     )
     
 
     # 9
-    pdf.h1("Vector database LanceDB")
+    pdf.h1("PostgreSQL + pgvector (kb_docs)")
     pdf.p(
-        "LanceDB slaat chunks op in collectie kb_docs. Zoeken gebeurt op cosine/vector "
-        "similarity, met optionele metadata filters."
+        "LexIntake gebruikt één PostgreSQL-database voor alles. Vector-chunks staan in "
+        "tabel kb_docs met de pgvector-extensie. Zoeken gebeurt via HNSW-index op cosine "
+        "similarity, met metadata filters."
     )
     pdf.h2("Schema (kernvelden)")
     pdf.bullet(
         [
-            "chunk_id — primaire sleutel voor upsert",
+            "chunk_id — primaire sleutel voor idempotente upsert",
             "text — chunk tekst",
-            "embedding — fixed-size float vector",
-            "metadata.practice_area",
-            "metadata.jurisdictions (lijst)",
-            "metadata.doc_type",
+            "embedding — pgvector kolom (1536 dims)",
+            "practice_area — slug voor filtering",
+            "jurisdictions — text[] array met GIN-index",
+            "doc_type — bv. sol_rules, acceptance, faq",
+            "payload — JSONB met type-specifieke velden",
+        ]
+    )
+    pdf.h2("Belangrijke bestanden")
+    pdf.bullet(
+        [
+            "db/pgvector_store.py — upsert + vector_search",
+            "db/schema.py — DDL + embedding dimensies",
+            "agents/intake/retrieve.py — retrieval met filters",
+            "tools/common.py — vector_search wrapper",
         ]
     )
     pdf.h2("Retrieval in de agent")
     pdf.p(
-        "De agent embedt de query, zoekt top_k (typisch 5–10) en filtert op practice_area / "
-        "jurisdiction / doc_type. Resultaten worden citaties: chunk_id + metadata."
+        "De agent embedt de query via OpenAI, zoekt top_k via pgvector (typisch 5–10) en "
+        "filtert op practice_area / jurisdiction / doc_type. Resultaten worden citaties."
     )
     pdf.code(
-        "vector = get_embedder().embed([query])[0]\n"
-        "hits = search_kb_docs(vector, top_k=8,\n"
+        "hits = vector_search(\n"
+        "    query, top_k=8,\n"
         "    practice_area='Personal Injury',\n"
-        "    jurisdiction='CA',\n"
-        "    doc_type='sol_rules')"
+        "    jurisdiction='CA', doc_type='sol_rules')"
     )
     
 
     # 10
-    pdf.h1("Structured database SQLite")
+    pdf.h1("Gestructureerde entiteiten in PostgreSQL")
     pdf.p(
-        "Niet alles hoort in een vector DB. Entities met relaties en exacte lookups "
-        "horen in SQLite."
+        "Entities met relaties en exacte lookups zitten in dezelfde PostgreSQL-database "
+        "als kb_docs (niet meer in aparte SQLite)."
     )
     pdf.h2("Tabellen")
     pdf.bullet(
         [
             "clients — voor conflict_check (naam/opposing party)",
             "attorneys — voor route_lead (specialisatie, availability, jurisdictions)",
-            "past_cases — voor estimate_case_value (comps)",
+            "past_cases — voor estimate_case_value (comps), FK naar clients + attorneys",
+        ]
+    )
+    pdf.h2("Belangrijke bestanden")
+    pdf.bullet(
+        [
+            "db/models.py — SQLAlchemy ORM (Client, Attorney, PastCase)",
+            "db/structured_db.py — query helpers voor tools",
+            "db/init_structured_db.py — schema + seed vanuit kb/*.json (python -m db.init_structured_db)",
+            "db/migrations/ — Alembic (001 schema, 002 pgvector)",
         ]
     )
     pdf.h2("Seed")
     pdf.p(
-        "python db/init_structured_db.py maakt schema aan en vult vanuit kb/*.json. "
-        "Conflict-demo’s werken omdat seeded clients (zoals Elena Vasquez) bestaan."
+        "python -m db.init_structured_db maakt tabellen aan en vult vanuit kb/*.json. "
+        "Conflict-demo's werken omdat seeded clients (zoals Elena Vasquez) bestaan."
     )
-    
 
-    # 11
+    # 12
+    pdf.h1("Docker Compose & FastAPI backend")
+    pdf.p(
+        "LexIntake draait standaard als Docker-stack via docker-compose.yml: postgres, "
+        "init (eenmalig), api (FastAPI :8000) en ui (Streamlit :8501)."
+    )
+    pdf.h2("Docker services")
+    pdf.bullet(
+        [
+            "postgres — pgvector/pgvector:pg16, poort 5432",
+            "init — scripts/docker_init.py: init_structured_db + etl.pipeline",
+            "api — backend/api/main.py via uvicorn",
+            "ui — frontend/app.py via streamlit",
+        ]
+    )
+    pdf.h2("FastAPI endpoints")
+    pdf.bullet(
+        [
+            "GET /health — health check",
+            "POST /v1/intake/analyze — quick analysis",
+            "POST /v1/interview/start — start interview sessie",
+            "POST /v1/interview/{id}/message — antwoord sturen",
+            "POST /v1/interview/{id}/screen — forceer screening",
+        ]
+    )
+    pdf.h2("Makefile")
+    pdf.code(
+        "make setup        # volledige Docker stack\n"
+        "make setup-local  # host Python + Postgres container\n"
+        "make ui / api     # Streamlit / FastAPI lokaal\n"
+        "make demo / eval  # demo + evaluation"
+    )
+    pdf.note("DATABASE_URL is verplicht: postgresql://lexintake:lexintake@localhost:5432/lexintake")
+
+    # 13
     pdf.h1("Agno tools (SOL, conflict, value, route)")
     pdf.p(
         "Tools zijn gewone Python-functies met Pydantic input/output, gewrapt als Agno "
@@ -1121,7 +1318,7 @@ def build() -> Path:
         ),
         (
             "conflict_check",
-            "Input: name, opposing_party. Zoekt in SQLite clients. "
+            "Input: name, opposing_party. Zoekt in Postgres clients tabel. "
             "Output: conflict bool + details.",
         ),
         (
@@ -1157,7 +1354,7 @@ def build() -> Path:
     )
     phases = [
         ("Plan", "Welke velden missen? Welke tools? Welke retrieval-query? Escaleren?"),
-        ("Retrieve", "LanceDB semantic search + filters → citaties."),
+        ("Retrieve", "pgvector semantic search + filters → citaties."),
         ("Tools", "Agentic of deterministisch tool-aanroepen."),
         ("Decide", "Lead score, viability, routing, next steps, confidence."),
         ("Self-check", "Disclaimer? Citaten? Verboden taal? Onzekerheid?"),
@@ -1200,11 +1397,32 @@ def build() -> Path:
     )
     
 
-    # 14
+    # 16
     pdf.h1("Lead scoring & beslissingen")
     pdf.p(
-        "scoring/lead_scoring.py bevat score_lead(context) → LeadScoreOutput. "
-        "Dit is deterministisch:zelfde context →zelfde beslissing."
+        "LexIntake heeft één scoring-engine: score_lead() in scoring/lead_scoring.py. "
+        "Zowel de IntakeAgent (via agents/intake/decide.py) als de API/UI "
+        "(via backend/services/intake_service.py) gebruiken dezelfde context-builder "
+        "in scoring/context.py. Geen dubbele score-logica meer."
+    )
+    pdf.h2("Scoring-keten (single source of truth)")
+    pdf.flow(
+        ["Facts + Tools", "context.py", "score_lead()", "Decision / UI payload"],
+        title="Unified scoring",
+    )
+    pdf.h2("Belangrijke bestanden")
+    pdf.bullet(
+        [
+            "scoring/lead_scoring.py — score_lead(): qualified, score, decision, explanation",
+            "scoring/context.py — build_lead_score_context() + acceptance criteria uit KB",
+            "scoring/constants.py — drempels (70/40), boosts, penalties (named constants)",
+            "agents/intake/decide.py — mapt LeadScoreOutput → DecisionResult voor agent-loop",
+            "backend/services/intake_service.py — zelfde score_lead voor JSON API/UI",
+        ]
+    )
+    pdf.p(
+        "Deterministisch: zelfde context → zelfde LeadScoreOutput. "
+        "Testbaar via pytest zonder OPENAI_API_KEY."
     )
     pdf.h2("Outputvelden")
     pdf.code(
@@ -1309,8 +1527,6 @@ def build() -> Path:
     )
     pdf.h2("Commands")
     pdf.code(
-        "# Offline / CI-achtig\n"
-        "python evaluation/run_evaluation.py --providers local:deterministic --limit 5\n\n"
         "# Live OpenAI (key vereist)\n"
         "python evaluation/run_evaluation.py --providers openai:gpt-4.1 --limit 5"
     )
@@ -1322,18 +1538,31 @@ def build() -> Path:
 
     # 18
     pdf.h1("Streamlit UI & demo")
-    pdf.h2("App")
-    pdf.code("python -m streamlit run ui/app.py")
+    pdf.h2("App (frontend/)")
+    pdf.code(
+        "make ui\n"
+        "# of: python -m streamlit run frontend/app.py\n"
+        "# Docker: http://localhost:8501"
+    )
     pdf.bullet(
         [
-            "Tab Interview — multi-turn gesprek",
-            "Tab Quick analysis — plak case description → pipeline",
+            "frontend/app.py — hoofd-UI met interview + quick analysis tabs",
+            "frontend/components/ — header, disclaimer, result_viewer, footer",
+            "frontend/demo.py — CLI demo met 4 scenario's",
+            "frontend/runner.py — gedeelde pipeline runner",
+            "Tab Interview — multi-turn gesprek via agents/interview/",
+            "Tab Quick analysis — plak case description → run_intake",
             "Sidebar met demoscenario’s",
             "Result viewer: score, decision, citaties, guardrails, tool JSON",
         ]
     )
+    pdf.h2("API alternatief (backend/)")
+    pdf.p(
+        "Dezelfde intake-logica via FastAPI op http://localhost:8000/docs. "
+        "Handig voor integraties of als je UI en backend wilt scheiden."
+    )
     pdf.h2("CLI demo (4 scenario’s)")
-    pdf.code("python ui/demo.py")
+    pdf.code("make demo   # of: python frontend/demo.py")
     pdf.p(
         "Scenario’s: valid PI → SCHEDULE_CONSULT; expired SOL → REJECT; "
         "conflict ACME → REJECT+escalate; uncertain immigration → REVIEW+escalate."
@@ -1344,6 +1573,7 @@ def build() -> Path:
     pdf.h1("Configuratie met .env")
     pdf.p("Secrets horen in .env (gitignored). Gebruik .env.example als template.")
     pdf.code(
+        "DATABASE_URL=postgresql://lexintake:lexintake@localhost:5432/lexintake\n"
         "OPENAI_API_KEY=\n"
         "LEXINTAKE_EMBEDDING_PROVIDER=openai\n"
         "LEXINTAKE_EMBEDDING_MODEL=text-embedding-3-small\n"
@@ -1375,14 +1605,15 @@ def build() -> Path:
         ]
     )
     pdf.h2("CI (.github/workflows/ci.yml)")
-    pdf.p("Draait op pull_request naar main, job smoke-test, volledig offline:")
+    pdf.p("Draait op pull_request naar main, job smoke-test, met live OpenAI:")
     pdf.bullet(
         [
-            "Python 3.11 + pip install",
-            "init_structured_db",
-            "etl.pipeline (hash embeddings)",
-            "ui/demo.py",
-            "evaluation --limit 5 (local)",
+            "Python 3.11 + pip install (PYTHONPATH=.)",
+            "pytest tests/ — unit tests (scoring, guardrails, tools, geen API key)",
+            "python -m db.init_structured_db",
+            "etl.pipeline (OpenAI embeddings)",
+            "frontend/demo.py (4 scenario's)",
+            "evaluation --limit 5 (openai:gpt-4.1)",
             "upload logs als artifacts",
         ]
     )
@@ -1393,25 +1624,28 @@ def build() -> Path:
 
     # 21
     pdf.h1("Stap-voor-stap: systeem starten")
-    pdf.h2("Eerste keer")
+    pdf.h2("Optie A — Docker (aanbevolen)")
     pdf.code(
-        "cd C:\\Users\\steve\\LexIntake\n"
-        "pip install -r requirements.txt\n"
         "copy .env.example .env\n"
         "# Zet OPENAI_API_KEY in .env\n"
-        "python db/init_structured_db.py\n"
-        "python -m etl.pipeline\n"
-        "python ui/demo.py\n"
-        "python -m streamlit run ui/app.py"
+        "make setup\n"
+        "# UI:  http://localhost:8501\n"
+        "# API: http://localhost:8000/docs"
     )
-    pdf.h2("Alleen offline")
+    pdf.h2("Optie B — Lokaal Python + Postgres container")
     pdf.code(
-        "$env:LEXINTAKE_EMBEDDING_PROVIDER='hash'\n"
-        "$env:LEXINTAKE_EMBEDDING_DIMS='256'\n"
-        "$env:LEXINTAKE_LLM_PROVIDER='local'\n"
-        "$env:LEXINTAKE_AGNO_TRACING='0'\n"
-        "python -m etl.pipeline\n"
-        "python ui/demo.py"
+        "copy .env.example .env\n"
+        "# Zet OPENAI_API_KEY + DATABASE_URL in .env\n"
+        "make setup-local\n"
+        "make demo\n"
+        "make ui\n"
+        "make api   # optioneel"
+    )
+    pdf.h2("Vereisten")
+    pdf.p(
+        "OPENAI_API_KEY én DATABASE_URL zijn verplicht voor ETL/demo/eval. "
+        "Unit tests (make test) draaien zonder API key. "
+        "PYTHONPATH wordt gezet door make/Docker/CI; lokaal: pip install -e . of $env:PYTHONPATH='.'"
     )
     pdf.h2("Handige checks")
     pdf.bullet(
@@ -1455,11 +1689,15 @@ def build() -> Path:
         ),
         (
             "OPENAI_API_KEY missing",
-            "Zet key in .env of schakel naar hash/local providers.",
+            "Zet OPENAI_API_KEY in .env (verplicht).",
         ),
         (
-            "Dimensie mismatch LanceDB",
-            "Normaal bij switch hash↔OpenAI. python -m etl.pipeline herbout de tabel.",
+            "DATABASE_URL missing",
+            "Start Postgres: make db-up of docker compose up -d postgres.",
+        ),
+        (
+            "Dimensie mismatch kb_docs",
+            "Herlaad met python -m etl.pipeline als embedding-dimensies wijzigen.",
         ),
         (
             "Conflict-demo faalt",
@@ -1467,7 +1705,7 @@ def build() -> Path:
         ),
         (
             "CI rood",
-            "Lokaal nabootsen met hash/local env vars en demo + eval --limit 5.",
+            "Lokaal nabootsen: .env key + demo + eval --limit 5. CI vereist secret OPENAI_API_KEY.",
         ),
         (
             "IntakeFacts validation error",
@@ -1507,7 +1745,7 @@ def build() -> Path:
     )
     pdf.h2("Oefening E — Eval")
     pdf.p(
-        "Draai evaluation --limit 5 offline en noteer grounding + guardrail compliance."
+        "Draai evaluation --limit 5 met OpenAI en noteer grounding + guardrail compliance."
     )
     pdf.h2("Oefening F — Uitlegscore")
     pdf.p(
@@ -1522,12 +1760,16 @@ def build() -> Path:
     pdf.bullet(
         [
             "Agno — agent framework",
-            "LanceDB — lokale vector DB",
+            "pgvector — PostgreSQL vector extensie voor semantic search",
+            "FastAPI — Python REST API framework (backend/)",
+            "Docker Compose — container orchestratie (postgres + api + ui)",
             "chunk_id — stabiele id van een tekstbrok",
             "upsert — insert-or-update",
             "abstention — systeem onthoudt zich / escaleert",
             "grounding — antwoorden steunen op retrieved evidence",
             "smoke-test — snelle CI-check dat het systeem niet kapot is",
+            "pytest — unit test framework (tests/ map, make test)",
+            "PYTHONPATH — repo-root op import path (Makefile/Docker/CI)",
         ]
     )
     pdf.h2("Opleverchecklist")
@@ -1538,7 +1780,8 @@ def build() -> Path:
             "Design Report + Evaluation Report aanwezig",
             "Dashboard draait",
             "Demo 4/4 groen",
-            "CI groen op main PRs",
+            "make test / pytest groen (16+ unit tests)",
+            "CI groen op main PRs (pytest + smoke)",
             "main protected",
             "OPENAI key lokaal gezet (niet gecommit)",
             "Demo-video opgenomen + link toegevoegd",
@@ -1577,7 +1820,7 @@ def build() -> Path:
     pdf.h2("Stap 3 — Retrieve")
     pdf.p(
         "De query mix practice area, CA, narrative en woorden als acceptance/settlement. "
-        "LanceDB geeft chunks terug (acceptance_criteria, sol_rules, past_case, faq). "
+        "pgvector search geeft chunks terug (acceptance_criteria, sol_rules, past_case, faq). "
         "Die chunks worden citaties."
     )
     pdf.h2("Stap 4 — Tools")
@@ -1617,7 +1860,7 @@ def build() -> Path:
     pdf.code("Employment discrimination claim in CA, opposing party is ACME Corp.")
     pdf.p(
         "De parser map’t dit bewust naar client Elena Vasquez (seeded conflict case) "
-        "wanneer employment+ACME voorkomt. conflict_check vindt een match in SQLite. "
+        "wanneer employment+ACME voorkomt. conflict_check vindt een match in Postgres clients. "
         "Beslissing: REJECT of minstens escalatie. Belangrijk lespunt: structured DB "
         "is essentieel; vector search alleen is niet genoeg voor exacte identity checks."
     )
@@ -1638,7 +1881,7 @@ def build() -> Path:
         [
             "Probleem: kantoren verdrinken in leads; paralegals filteren handmatig.",
             "Oplossing: agentic RAG screener — niet chatbot.",
-            "Kennis: synthetische KB + ETL naar LanceDB + SQLite entities.",
+            "Kennis: synthetische KB + ETL naar PostgreSQL (pgvector + entities).",
             "Agent: plant, retrieve’t, roept tools, scoort, self-checkt.",
             "Veiligheid: disclaimer, citaties, escalatie, geen legal advice.",
             "Bewijs: demo 4 scenario’s, evaluation metrics, CI smoke, GitHub flow.",
@@ -1654,8 +1897,8 @@ def build() -> Path:
         "1) Bestanden in kb/ liggen op disk. 2) extract_all leest ze. 3) clean normaliseert. "
         "4) dedupe berekent content_hash. 5) chunk snijdt tekst en maakt chunk_id. "
         "6) metadata hangt practice_area/doc_type/jurisdictions. 7) embedder maakt vectoren. "
-        "8) upsert_kb_docs schrijft LanceDB. 9) Bij runtime embedt de agent de query. "
-        "10) search_kb_docs rangschikt. 11) Tools lezen JSON/SQLite. 12) score_lead beslist. "
+        "8) pgvector_store upsert naar kb_docs. 9) Bij runtime embedt de agent de query. "
+        "10) vector_search rangschikt via pgvector. 11) Tools lezen JSON/Postgres. 12) score_lead beslist. "
         "13) respond bouwt tekst + JSON voor UI."
     )
     pdf.p(
@@ -1666,11 +1909,10 @@ def build() -> Path:
     pdf.p(
         "config.py + agents/llm.py + etl/transform/embeddings.py scheiden ‘welke vendor’ van "
         "‘welke business logic’. Daardoor kun je OpenAI, Anthropic of Groq kiezen voor "
-        "LLM, en openai/hash voor embeddings, zonder tools/scoring te herschrijven."
+        "LLM, en OpenAI voor embeddings, zonder tools/scoring te herschrijven."
     )
     pdf.p(
-        "CI forceert local/hash zodat grading/instructor-runs niet van jouw creditcard "
-        "afhangen. Live demos gebruiken OpenAI voor betere retrieval-narratieven."
+        "CI gebruikt dezelfde live OpenAI-paden via de repository secret OPENAI_API_KEY."
     )
 
     pdf.h1("Wat is ‘goed genoeg’ voor grading?")
@@ -1711,34 +1953,69 @@ def build() -> Path:
         ]
     )
 
+    pdf.h1("Unit tests & code-kwaliteit")
+    pdf.p(
+        "LexIntake heeft een pytest-suite in tests/ voor deterministische modules. "
+        "Deze tests draaien snel en zonder OPENAI_API_KEY — ideaal vóór elke commit."
+    )
+    pdf.h2("Wat wordt getest?")
+    pdf.bullet(
+        [
+            "scoring/lead_scoring.py — determinisme, SOL reject, conflict reject, score bands",
+            "agents/intake/decide.py — decide() == score_lead() (unified scoring)",
+            "scoring/context.py — acceptance criteria uit facts (geen placeholders)",
+            "agents/intake/guardrails.py — disclaimer + citation checks",
+            "agents/intake/fact_parse.py — PI case parsing heuristics",
+            "tools/conflict_check.py — gemockte Postgres query",
+        ]
+    )
+    pdf.h2("Commands")
+    pdf.code(
+        "make test                    # pytest tests/ -q\n"
+        "pytest tests/test_lead_scoring.py -v\n"
+        "pip install -e .             # optioneel: editable install"
+    )
+    pdf.h2("Code-kwaliteit principes in dit project")
+    pdf.bullet(
+        [
+            "Single source of truth — één score_lead(), één LEGAL_DISCLAIMER, één slugify",
+            "Package imports — from tools.common import (geen sys.path hacks)",
+            "Named constants — scoring/constants.py i.p.v. magic numbers",
+            "Service layer — backend/services/intake_service.py deelt logica UI/API",
+            "Deterministic core — business rules testbaar zonder LLM",
+        ]
+    )
+
     pdf.h1("Cheatsheet: commands die je moet kennen")
     pdf.code(
-        "pip install -r requirements.txt\n"
-        "copy .env.example .env\n"
-        "python db/init_structured_db.py\n"
-        "python -m etl.pipeline\n"
-        "python ui/demo.py\n"
-        "python -m streamlit run ui/app.py\n"
-        "python -m streamlit run monitoring/dashboard.py\n"
-        "python evaluation/run_evaluation.py --providers local:deterministic --limit 5\n"
-        "python docs/generate_leerboek_pdf.py"
+        "make setup              # Docker: Postgres + init + API + UI\n"
+        "make setup-local        # Host Python + Postgres container\n"
+        "make test               # pytest (geen API key nodig)\n"
+        "make demo / ui / api    # Demo, Streamlit, FastAPI\n"
+        "make eval / dashboard   # Evaluation + monitoring\n"
+        "make down               # Stop containers\n"
+        "python docs/generate_leerboek_pdf.py  # Genereer dit leerboek"
     )
 
     pdf.h1("Cheatsheet: bestanden die je moet kunnen aanwijzen")
     mapping = [
         "Opdrachtbegrip -> docs/DESIGN_REPORT.md + dit leerboek",
-        "KB -> kb/*.json + faqs.md",
-        "ETL -> etl/extract + etl/transform + etl/load",
-        "Vector load -> etl/pipeline.py + db/lancedb_store.py",
-        "SQLite -> db/models.py + db/migrations + db/sqlite_db.py",
-        "Tools -> tools/*.py",
-        "Agent -> agents/intake/agent.py",
+        "KB brondata -> kb/*.json + faqs.md",
+        "ETL -> etl/pipeline.py + etl/extract|transform|load/",
+        "Vector store -> db/pgvector_store.py + db/schema.py",
+        "Entities -> db/models.py + db/structured_db.py + db/migrations/",
+        "Tools -> tools/*.py + tools/common.py",
+        "Agent loop -> agents/intake/agent.py + retrieve.py + decide.py",
         "Interview -> agents/interview/agent.py",
-        "Scoring -> scoring/lead_scoring.py",
-        "UI -> ui/app.py",
-        "Eval -> evaluation/run_evaluation.py",
+        "LLM wiring -> agents/llm.py + agents/shared/make_agent.py",
+        "Scoring -> scoring/lead_scoring.py + scoring/context.py + scoring/constants.py",
+        "Tests -> tests/ (pytest, make test)",
+        "UI -> frontend/app.py + frontend/components/",
+        "API -> backend/api/main.py + backend/services/",
+        "Docker -> docker-compose.yml + scripts/docker_init.py",
+        "Eval -> evaluation/run_evaluation.py + leads.csv",
         "CI -> .github/workflows/ci.yml",
-        "Config -> config.py + .env",
+        "Config -> config.py + .env + Makefile",
     ]
     for line in mapping:
         pdf.set_x(pdf.l_margin)
@@ -1750,10 +2027,12 @@ def build() -> Path:
     pdf.bullet(
         [
             "Wat is het verschil tussen RAG en ‘gewoon een LLM vragen’?",
-            "Waarom bestaat SQLite naast LanceDB?",
+            "Waarom Postgres entities naast pgvector kb_docs?",
             "Noem de 5 agent-fasen in volgorde.",
             "Welke beslissingen kan score_lead geven?",
-            "Hoe dwingt CI af dat er geen API-keys nodig zijn?",
+            "Hoe dwingt CI live embeddings/LLM af?",
+            "Waar zit de enige scoring-engine?",
+            "Welke tests draaien zonder API key?",
             "Wat moet er altijd in een user-facing antwoord staan?",
             "Welk scenario toont conflict detection?",
             "Waar landen Agno traces?",
@@ -1792,8 +2071,8 @@ def build() -> Path:
             "gedrag meetbaar en demo-baar per fase.",
         ),
         (
-            "Is hash-embedding ‘vals spelen’?",
-            "Nee voor CI. Ja als enige productiepad. Daarom is OpenAI default live.",
+            "Waarom is een API-key verplicht?",
+            "Zonder key zijn embeddings en LLM niet beschikbaar. Hash/local paden zijn verwijderd.",
         ),
         (
             "Moet valuation perfect zijn?",
