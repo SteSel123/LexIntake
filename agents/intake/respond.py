@@ -1,4 +1,9 @@
-"""Respond phase: assemble IntakeResponse from pipeline artifacts."""
+"""
+Respond phase: assemble IntakeResponse from pipeline artifacts.
+
+Prefers an LLM-written ScreeningMessage when available; otherwise builds a
+templated summary, then runs message guardrails (disclaimer / escalation).
+"""
 
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ from agents.intake.models import (
 
 
 def tool_summary_lines(tools: ToolPhaseResult) -> list[str]:
+    """Short bullet lines describing each tool payload for the templated message."""
     parts: list[str] = []
     if tools.sol:
         parts.append(
@@ -54,6 +60,7 @@ def build_templated_message(
     escalate: bool,
     questions: list[str],
 ) -> str:
+    """Deterministic screening summary from prompts.xml (no LLM)."""
     citation_lines = [
         PROMPTS.text(
             "citation_line",
@@ -103,22 +110,31 @@ def build_response(
     llm_ready: bool = False,
     log: Callable[[str, str], None] | None = None,
 ) -> IntakeResponse:
+    """
+    Build the final IntakeResponse for API / UI.
+
+    Escalates when self_check says so or confidence is below threshold.
+    Message path: optional LLM write → template fallback → guardrails.
+    """
     escalate = check.escalate or decision.confidence < confidence_threshold
     questions = plan.questions[:RESPOND_QUESTIONS_MAX]
     used_llm = False
     message = ""
 
+    # Prefer LLM wording when the caller allows it and a model is configured.
     if use_llm and llm_ready and write_message is not None:
         message = write_message(
             facts, retrieval, tools, decision, escalate=escalate, questions=questions
         )
         used_llm = bool(message)
 
+    # Template path: always available (also used for the pre-self_check draft).
     if not message:
         message = build_templated_message(
             facts, plan, retrieval, tools, decision, escalate=escalate, questions=questions
         )
 
+    # Enforce disclaimer / escalation language and citation hygiene.
     message = enforce_message_guardrails(
         message, escalate=escalate, citations=retrieval.citations
     )
