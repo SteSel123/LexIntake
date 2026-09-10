@@ -1,4 +1,8 @@
-"""SQLAlchemy models for LexIntake structured entities."""
+"""SQLAlchemy models for LexIntake structured entities.
+
+Maps firm CRM-style tables (clients, attorneys, cases) and KB reference tables
+(practice areas, SOL rules, acceptance criteria) used by Agno tools and seeding.
+"""
 
 from __future__ import annotations
 
@@ -13,10 +17,17 @@ _CREATED_AT = text("CURRENT_TIMESTAMP")
 
 
 class Base(DeclarativeBase):
+    """Declarative base for Alembic autogenerate and ORM mappings."""
+
     pass
 
 
+# --- CRM entities (migration 001) ------------------------------------------
+
+
 class Client(Base):
+    """Prospective or past client contact record."""
+
     __tablename__ = "clients"
     __table_args__ = (Index("idx_clients_state", "state"),)
 
@@ -31,6 +42,8 @@ class Client(Base):
 
 
 class Attorney(Base):
+    """Firm attorney profile for routing and conflict checks."""
+
     __tablename__ = "attorneys"
     __table_args__ = (Index("idx_attorneys_availability", "availability"),)
 
@@ -46,6 +59,8 @@ class Attorney(Base):
 
 
 class PastCase(Base):
+    """Historical matter used for similarity and acceptance benchmarking."""
+
     __tablename__ = "past_cases"
     __table_args__ = (
         Index("idx_past_cases_practice_area", "practice_area"),
@@ -69,7 +84,12 @@ class PastCase(Base):
     client: Mapped[Client | None] = relationship(back_populates="past_cases")
 
 
+# --- KB reference tables (migration 003) -----------------------------------
+
+
 class PracticeArea(Base):
+    """Canonical practice-area name list seeded from ``kb/practice_areas.json``."""
+
     __tablename__ = "practice_areas"
 
     name: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -77,6 +97,8 @@ class PracticeArea(Base):
 
 
 class SolRule(Base):
+    """Statute-of-limitations snippet keyed by practice area and jurisdiction."""
+
     __tablename__ = "sol_rules"
     __table_args__ = (
         Index("idx_sol_rules_practice_area", "practice_area"),

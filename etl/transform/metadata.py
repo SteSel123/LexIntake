@@ -1,4 +1,8 @@
-"""Attach retrieval metadata to chunks."""
+"""Attach retrieval metadata to chunks for pgvector filtering and citations.
+
+Metadata captures practice area, jurisdictions, doc type, and indexing provenance
+so the agent can filter searches and cite ``chunk_id`` in user-facing responses.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""Demo script: run 4 predefined LexIntake intake scenarios."""
+"""CLI demo: run four predefined intake scenarios and assert expected outcomes.
+
+Used locally and in CI smoke tests to prove end-to-end behavior (SOL reject,
+conflict detection, uncertain escalation) without opening the Streamlit UI.
+"""
 
 from __future__ import annotations
 
@@ -53,11 +57,13 @@ SCENARIOS: list[dict[str, Any]] = [
 
 
 def _contains_any(text: str, needles: list[str]) -> bool:
+    """Return True if any needle appears as a substring (case-insensitive)."""
     lower = text.lower()
     return any(n.lower() in lower for n in needles)
 
 
 def verify_guardrails(payload: dict[str, Any]) -> list[str]:
+    """Check that screening output includes disclaimer text and KB citations."""
     issues: list[str] = []
     explanation = str(payload.get("explanation") or "")
     if "not legal advice" not in explanation.lower():
@@ -74,6 +80,7 @@ def verify_guardrails(payload: dict[str, Any]) -> list[str]:
 
 
 def verify_scenario(scenario: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    """Compare agent payload against per-scenario expectations; return issue codes."""
     issues: list[str] = []
     expect = scenario["expect"]
 
@@ -108,6 +115,7 @@ def verify_scenario(scenario: dict[str, Any], payload: dict[str, Any]) -> list[s
 
 
 def main() -> None:
+    """Run all SCENARIOS; exit non-zero if any fail (for CI and local smoke checks)."""
     print("LexIntake UI demo scenarios")
     print("=" * 72)
     print(f"Disclaimer check string: {LEGAL_DISCLAIMER}")

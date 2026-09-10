@@ -1,4 +1,4 @@
-"""Load stage: persist transformed chunks into PostgreSQL kb_docs."""
+"""Load stage: lazy export of ``load`` and ``existing_by_id`` for the pipeline."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ __all__ = ["existing_by_id", "load"]
 
 
 def __getattr__(name: str) -> Any:
+    """Defer import of ``vector_db`` until load helpers are accessed."""
     if name in {"existing_by_id", "load"}:
         from etl.load import vector_db as module
 

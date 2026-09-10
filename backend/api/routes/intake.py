@@ -1,4 +1,8 @@
-"""Quick intake analysis endpoints."""
+"""Quick intake analysis endpoints.
+
+Single-request screening: client sends a case description and receives a
+scored decision without maintaining session state.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ _logger = get_console_logger("api.intake")
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
+    """Run the full intake agent + scoring pipeline on ``body.description``."""
     description = body.description.strip()
     if not description:
         raise HTTPException(status_code=400, detail="description must not be empty")

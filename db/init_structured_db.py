@@ -1,4 +1,8 @@
-"""CLI: initialize LexIntake PostgreSQL schema and seed from kb/."""
+"""CLI: initialize LexIntake PostgreSQL schema and seed from kb/.
+
+Run after setting ``DATABASE_URL`` to apply Alembic migrations and optionally
+load structured reference data from the ``kb/`` JSON fixtures.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from db.structured_db import init_db
 
 
 def main() -> None:
+    """Parse flags and invoke ``init_db`` with optional seeding."""
     parser = argparse.ArgumentParser(
         description="Initialize LexIntake PostgreSQL DB (requires DATABASE_URL)"
     )

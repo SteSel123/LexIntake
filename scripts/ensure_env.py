@@ -1,4 +1,7 @@
-"""Create .env from .env.example if missing (never overwrites)."""
+"""Create ``.env`` from ``.env.example`` when missing (never overwrites).
+
+First-time setup helper so new clones get a template env file without manual copy.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +12,7 @@ DST = ROOT / ".env"
 
 
 def main() -> None:
+    """Copy ``.env.example`` to ``.env`` if the latter does not exist yet."""
     if not SRC.exists():
         raise SystemExit(".env.example missing")
     if DST.exists():

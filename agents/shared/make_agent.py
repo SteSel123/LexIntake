@@ -1,4 +1,9 @@
-"""Shared Agno agent factory and wiring helpers."""
+"""Shared Agno agent factory and wiring helpers.
+
+Provides a single entry point for constructing configured ``Agent`` instances:
+model resolution, optional OpenTelemetry tracing, and version-safe kwargs so
+LexIntake works across Agno releases that add or rename constructor flags.
+"""
 
 from __future__ import annotations
 
@@ -57,6 +62,7 @@ def prepare_agent_kwargs(
         "markdown": markdown,
         **kwargs,
     }
+    # Only pass kwargs the installed Agno version accepts (avoids TypeError on upgrade)
     supported = inspect.signature(Agent.__init__).parameters
     if reasoning and "reasoning" in supported:
         agent_kwargs["reasoning"] = True
@@ -96,6 +102,7 @@ def make_agent(
     that need custom ``__init__`` state should call ``resolve_model``,
     ``enable_tracing``, and ``prepare_agent_kwargs`` instead, then ``super()``.
     """
+    # Fallback defaults allow importing in minimal test environments without config
     try:
         from config import LLM_MODEL, LLM_PROVIDER
     except ImportError:  # pragma: no cover

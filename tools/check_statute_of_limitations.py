@@ -1,4 +1,10 @@
-"""Agno tool: check statute of limitations from Postgres sol_rules."""
+"""
+Agno tool: check statute of limitations from Postgres sol_rules.
+
+Determines whether a claim is still within the filing deadline using KB rules
+seeded from kb/sol_tables.json. Returns conservative fallbacks when data is
+missing or unparsable so intake can escalate instead of auto-rejecting.
+"""
 
 from __future__ import annotations
 
@@ -11,18 +17,23 @@ from tools.common import logger, lookup_sol_rule, match_practice_area, parse_sol
 
 
 class CheckSOLInput(BaseModel):
+    """Required fields for SOL screening."""
+
     jurisdiction: str = Field(..., description="Two-letter US state code, e.g. CA")
     case_type: str = Field(..., description="Practice area or case type label")
     incident_date: str = Field(..., description="Incident date in ISO format YYYY-MM-DD")
 
 
 class CheckSOLOutput(BaseModel):
+    """SOL result consumed by lead scoring and intake agents."""
+
     valid: bool
     expires_in: int = Field(..., description="Days remaining; -1 if open-ended or unknown")
     explanation: str
 
 
 def _parse_incident_date(value: str) -> date | None:
+    """Parse ISO date prefix; returns None on malformed input."""
     try:
         return date.fromisoformat(value[:10])
     except ValueError:
@@ -30,6 +41,7 @@ def _parse_incident_date(value: str) -> date | None:
 
 
 def _today() -> date:
+    """UTC date for consistent remaining-days calculation across environments."""
     return datetime.now(timezone.utc).date()
 
 
@@ -47,6 +59,7 @@ def check_statute_of_limitations(payload: CheckSOLInput) -> CheckSOLOutput:
 
 
 def _check_statute_of_limitations_impl(payload: CheckSOLInput) -> CheckSOLOutput:
+    """Core SOL logic; wrapped by Agno tool for timing and error boundaries."""
     try:
         incident = _parse_incident_date(payload.incident_date)
         if incident is None:
@@ -60,6 +73,8 @@ def _check_statute_of_limitations_impl(payload: CheckSOLInput) -> CheckSOLOutput
             )
 
         practice_area = match_practice_area(payload.case_type)
+        # Unknown practice area → valid=True, expires_in=-1: do not hard-reject on
+        # missing KB mapping; scoring will flag missing data for human review.
         if not practice_area:
             return CheckSOLOutput(
                 valid=True,

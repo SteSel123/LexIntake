@@ -55,10 +55,12 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
 
 
 def tracing_enabled() -> bool:
+    """Return whether ``enable_agno_monitoring`` succeeded in this process."""
     return _ENABLED
 
 
 def get_trace_db() -> Any | None:
+    """Return the Agno SqliteDb handle when tracing is active."""
     return _TRACE_DB
 
 

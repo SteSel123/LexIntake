@@ -1,4 +1,4 @@
-"""LexIntake observability & monitoring."""
+"""LexIntake observability: structured JSONL logging, in-memory metrics, dashboard."""
 
 from .app_logging import configure_logging, get_console_logger
 from .logger import (

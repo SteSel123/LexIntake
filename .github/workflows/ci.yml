@@ -1,3 +1,4 @@
+# LexIntake CI: unit tests + live smoke (Postgres init, ETL, demo, eval) on PRs to main.
 name: CI
 
 on:

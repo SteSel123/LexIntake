@@ -1,4 +1,8 @@
-"""HTTP request/response schemas for the LexIntake API."""
+"""HTTP request/response schemas for the LexIntake API.
+
+Pydantic models validate inbound JSON and shape outbound payloads so OpenAPI
+docs and client code stay aligned with the intake and interview endpoints.
+"""
 
 from __future__ import annotations
 
@@ -7,17 +11,32 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+# --- Health ----------------------------------------------------------------
+
+
 class HealthResponse(BaseModel):
+    """Liveness probe payload for load balancers and monitoring."""
+
     status: str = "ok"
     service: str = "lexintake-api"
 
 
+# --- Quick intake (single-shot analysis) -----------------------------------
+
+
 class AnalyzeRequest(BaseModel):
+    """Free-text case narrative submitted for one-shot screening."""
+
     description: str = Field(..., min_length=1, description="Free-text case description")
 
 
 class AnalyzeResponse(BaseModel):
-    """Screening payload returned by quick analysis."""
+    """Screening payload returned by quick analysis.
+
+    Fields mirror the lead-scoring pipeline output: decision, score, citations,
+    tool results (SOL, conflict, estimate, routing), and guardrail flags.
+    Extra keys from the pipeline are allowed via ``extra="allow"``.
+    """
 
     decision: str | None = None
     qualified: bool | None = None
@@ -36,7 +55,12 @@ class AnalyzeResponse(BaseModel):
     model_config = {"extra": "allow"}
 
 
+# --- Multi-turn interview --------------------------------------------------
+
+
 class CreateInterviewResponse(BaseModel):
+    """First assistant turn after a new interview session is created."""
+
     session_id: str
     phase: str
     assistant_message: str
@@ -45,10 +69,14 @@ class CreateInterviewResponse(BaseModel):
 
 
 class InterviewTurnRequest(BaseModel):
+    """Client reply for one interview turn."""
+
     message: str = Field(..., min_length=1, description="Client reply for this turn")
 
 
 class InterviewTurnResponse(BaseModel):
+    """Assistant reply plus collected facts; includes screening when ``done``."""
+
     session_id: str
     phase: str
     assistant_message: str

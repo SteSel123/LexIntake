@@ -1,4 +1,8 @@
-"""Compatibility shim — prefer ``backend.services.intake_service``."""
+"""Backward-compatible re-exports for intake helpers.
+
+Legacy imports from ``frontend.runner`` still work; new code should import
+directly from ``backend.services.intake_service``.
+"""
 
 from __future__ import annotations
 

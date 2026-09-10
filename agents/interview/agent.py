@@ -1,4 +1,10 @@
-"""Multi-turn prospective-client interview for LexIntake."""
+"""Multi-turn prospective-client interview for LexIntake.
+
+``InterviewSession`` drives a conversational intake: greet, collect required
+fields via targeted questions, merge heuristic + LLM extraction into ``IntakeFacts``,
+then hand off to the full ``IntakeAgent`` screening pipeline when enough data exists
+(or the user asks to finish early with practice area + jurisdiction known).
+"""
 
 from __future__ import annotations
 
@@ -22,6 +28,7 @@ from agents.prompts import load_prompts
 
 InterviewPhase = Literal["greeting", "collecting", "screening", "done"]
 
+# Minimum fields before running full screening (sentinel names count as missing)
 REQUIRED_FIELDS = (
     "name",
     "practice_area",
@@ -36,11 +43,15 @@ FIELD_PROMPTS = PROMPTS.mapping("field_prompts")
 
 
 class ChatMessage(BaseModel):
+    """Single turn in the interview conversation history."""
+
     role: Literal["assistant", "user", "system"]
     content: str
 
 
 class InterviewTurnResult(BaseModel):
+    """Payload returned after ``start()`` or ``respond()`` for one interview turn."""
+
     phase: InterviewPhase
     assistant_message: str
     facts: IntakeFacts
@@ -64,6 +75,7 @@ class InterviewSession:
             self.agent = build_default_agent()
 
     def missing_fields(self) -> list[str]:
+        """Return required field keys still empty or holding placeholder sentinel values."""
         values = self.facts.model_dump()
         missing: list[str] = []
         for key in REQUIRED_FIELDS:
@@ -77,6 +89,7 @@ class InterviewSession:
         return missing
 
     def start(self) -> InterviewTurnResult:
+        """Open the interview with welcome text and the first practice-area question."""
         self.phase = "collecting"
         msg = PROMPTS.text(
             "welcome",
@@ -166,6 +179,7 @@ class InterviewSession:
         self._llm_extract_fields(cleaned)
 
     def _llm_extract_fields(self, text: str) -> None:
+        """Structured LLM pass to fill gaps the regex/heuristic merge may have missed."""
         assert self.agent is not None
         prompt = PROMPTS.user(
             "extract_fields",
@@ -199,12 +213,14 @@ class InterviewSession:
             self.facts.damages = int(extracted.damages)
 
     def _questions_message(self, missing: list[str]) -> str:
+        """Format up to ``max_questions_per_turn`` follow-ups from ``FIELD_PROMPTS``."""
         asks = missing[: self.max_questions_per_turn]
         lines = [FIELD_PROMPTS[f] for f in asks if f in FIELD_PROMPTS]
         preface = PROMPTS.text("questions_preface")
         return preface + "\n\n" + "\n".join(f"- {q}" for q in lines)
 
     def respond(self, user_text: str) -> InterviewTurnResult:
+        """Process one user reply: extract facts, ask more questions, or run screening."""
         text = (user_text or "").strip()
         if not text:
             msg = PROMPTS.text("empty_reply")
@@ -220,7 +236,7 @@ class InterviewSession:
         self._merge_text_into_facts(text)
         missing = self.missing_fields()
 
-        # Allow early screening if user asks to finish and we have practice area + jurisdiction
+        # Early exit: user signals done and we have enough context for a meaningful screen
         finish = any(
             p in text.lower()
             for p in ("done", "that's all", "thats all", "screen now", "finish", "ready")
@@ -243,6 +259,7 @@ class InterviewSession:
         # Enough information — run full screening pipeline
         self.phase = "screening"
         assert self.agent is not None
+        # Replace parse-time sentinels with interview-specific labels before screening
         if not self.facts.name or self.facts.name == SENTINEL_NAME:
             self.facts.name = (
                 self.facts.name
@@ -270,4 +287,5 @@ class InterviewSession:
 
 
 def build_interview_session(**kwargs: Any) -> InterviewSession:
+    """Factory for ``InterviewSession`` with optional custom agent or facts."""
     return InterviewSession(**kwargs)

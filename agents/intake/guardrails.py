@@ -1,10 +1,17 @@
-"""Disclaimer, citation, and escalation checks for intake responses."""
+"""Disclaimer, citation, and escalation checks for intake responses.
+
+Two layers: ``self_check`` validates a draft before finalize (disclaimer present,
+citations when retrieval ran, banned advisory language, confidence threshold).
+``enforce_message_guardrails`` mutates the final message to append missing legal
+text, escalation notices, and KB citation blocks.
+"""
 
 from __future__ import annotations
 
 from agents.intake.constants import LEGAL_DISCLAIMER, PROMPTS, UNCERTAINTY_ESCALATION
 from agents.intake.models import DecisionResult, KBCitation, PlanResult, RetrieveResult, SelfCheckResult
 
+# Phrases that imply legal certainty or direct litigation advice — not allowed in screening output
 BANNED_PATTERNS = (
     "i am certain the statute",
     "guaranteed win",
@@ -34,6 +41,7 @@ def self_check(
         if pattern in lowered:
             issues.append(f"Unsafe / advisory language detected: {pattern}")
 
+    # Escalate to human review when plan, confidence, viability, or conflict checks fail
     escalate = (
         plan.escalate
         or decision.confidence < confidence_threshold
@@ -59,10 +67,12 @@ def enforce_message_guardrails(
     citations: list[KBCitation],
 ) -> str:
     """Always append disclaimer, escalation line, and citations when missing."""
+    # Append mandatory disclaimer even when the LLM omitted it
     if LEGAL_DISCLAIMER.lower() not in message.lower() and "not legal advice" not in message.lower():
         message = f"{message}\n\n{LEGAL_DISCLAIMER}"
     if escalate and UNCERTAINTY_ESCALATION not in message:
         message = f"{message}\n\n{UNCERTAINTY_ESCALATION}"
+    # Avoid duplicating citation blocks if the model already inlined them
     if citations and "chunk_id=" not in message and "KB citation" not in message:
         cite_lines = "\n".join(
             PROMPTS.text(

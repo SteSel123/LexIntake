@@ -1,4 +1,7 @@
-"""Tests that decide() delegates to score_lead (single scoring source)."""
+"""Tests that ``decide()`` delegates to ``score_lead`` (single scoring source).
+
+Guards against duplicate decision logic diverging from ``scoring/lead_scoring.py``.
+"""
 
 from __future__ import annotations
 

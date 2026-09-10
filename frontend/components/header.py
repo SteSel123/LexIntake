@@ -1,4 +1,4 @@
-"""UI header component."""
+"""Branded hero header for the LexIntake Streamlit landing area."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ BRAND = "LexIntake"
 
 
 def render_header() -> None:
+    """Render product name and tagline above the tabbed intake UI."""
     st.markdown(
         f"""
         <div class="li-hero">

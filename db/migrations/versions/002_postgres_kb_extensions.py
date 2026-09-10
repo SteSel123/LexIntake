@@ -1,5 +1,8 @@
 """Postgres extensions + heterogeneous kb_docs vector table.
 
+Enables pgvector and pg_trgm, then creates ``kb_docs`` with HNSW cosine index
+and GIN indexes for metadata filters and fuzzy text search.
+
 Revision ID: 002_pg_kb
 Revises: 001_initial
 Create Date: 2026-09-09
@@ -20,14 +23,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def _embedding_dims() -> int:
+    """Embedding width from env (must match ETL / embedding model output)."""
     return int(os.getenv("LEXINTAKE_EMBEDDING_DIMS", "1536"))
 
 
 def upgrade() -> None:
     dims = _embedding_dims()
+
+    # --- PostgreSQL extensions ---------------------------------------------
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
 
+    # --- kb_docs vector table + indexes --------------------------------------
     op.execute(
         sa.text(
             f"""

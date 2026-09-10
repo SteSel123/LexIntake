@@ -1,4 +1,7 @@
-"""Conflict check with mocked structured DB."""
+"""Tests for ``tools.conflict_check`` with a mocked structured Postgres layer.
+
+Validates conflict detection when a prospect name matches a seeded client row.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Remove __pycache__ directories and *.pyc / *.pyo files."""
+"""Remove ``__pycache__`` directories and compiled ``*.pyc`` / ``*.pyo`` files.
+
+Use before packaging or when stale bytecode causes confusing import behavior.
+"""
 from __future__ import annotations
 
 import shutil
@@ -8,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    """Walk the repo tree and delete Python cache artifacts."""
     removed = 0
     for path in ROOT.rglob("__pycache__"):
         shutil.rmtree(path, ignore_errors=True)

@@ -1,4 +1,10 @@
-"""Build LeadScoreContext from intake pipeline artifacts (single source of truth)."""
+"""
+Build LeadScoreContext from intake pipeline artifacts.
+
+Single source of truth for turning IntakeFacts + tool/retrieval results into
+the dict consumed by score_lead(). Keeps acceptance-criteria derivation
+aligned with KB must_have lists and uncertain-narrative handling.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +20,8 @@ from agents.intake.models import (
 from scoring.domain import is_uncertain_narrative
 from tools.common import load_acceptance_criteria
 
-# Heuristic signals mapped to KB must_have language (acceptance_criteria.json).
+# Maps populated IntakeFacts fields to human-readable labels that match
+# acceptance_criteria.json must_have strings (used for matched/unmet lists).
 _FACT_SIGNALS: tuple[tuple[str, str], ...] = (
     ("name", "Client identity provided"),
     ("opposing_party", "Identifiable at-fault party or liable entity"),
@@ -46,6 +53,8 @@ def build_acceptance_criteria(
     if isinstance(kb_entry, dict):
         must_have = list(kb_entry.get("must_have") or [])
 
+    # Infer KB must_have satisfaction from related fact fields when labels differ
+    # from _FACT_SIGNALS (e.g. "SOL" criterion satisfied by incident_date alone).
     if must_have:
         for criterion in must_have:
             if criterion in matched:
@@ -71,6 +80,8 @@ def build_acceptance_criteria(
             if criterion not in matched:
                 unmet.append(criterion)
 
+    # Uncertain narratives cannot confirm jurisdiction — force unmet so scoring
+    # penalizes and downstream override can escalate to REVIEW.
     if is_uncertain_narrative(narrative or facts.narrative):
         if "Jurisdiction confirmed for screening" not in matched:
             unmet.append("Jurisdiction confirmed for screening")
@@ -93,6 +104,8 @@ def build_lead_score_context(
 ) -> dict[str, Any]:
     """Assemble the dict consumed by score_lead()."""
     del plan  # reserved for future plan-aware acceptance rules
+
+    # Slim citation payload — full text lives in retrieval; scoring only needs IDs.
     citations = [
         {
             "chunk_id": c.chunk_id,

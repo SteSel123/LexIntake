@@ -1,4 +1,7 @@
-"""Fact parsing heuristics."""
+"""Tests for ``agents.intake.fact_parse`` heuristics on free-text case descriptions.
+
+Covers practice-area inference, damage parsing, and PI scenario field extraction.
+"""
 
 from __future__ import annotations
 

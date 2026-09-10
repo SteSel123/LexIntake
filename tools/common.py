@@ -1,4 +1,9 @@
-"""Shared helpers for LexIntake Agno tools."""
+"""
+Shared helpers for LexIntake Agno tools.
+
+Practice-area normalization, Postgres KB lookups, SOL parsing, vector search,
+and tool timing/metrics used across all intake screening tools.
+"""
 
 from __future__ import annotations
 
@@ -68,6 +73,7 @@ PRACTICE_TEXT_HINTS: tuple[tuple[str, str], ...] = (
 
 
 def slugify(value: str | None) -> str:
+    """Normalize free text to lowercase underscore slug for deterministic matching."""
     if not value:
         return ""
     return _SLUG_RE.sub("_", value.strip().lower()).strip("_")
@@ -106,6 +112,7 @@ def load_acceptance_criteria(practice_area: str | None) -> dict[str, Any] | None
     )
     if rows and isinstance(rows[0].get("payload"), dict):
         return rows[0]["payload"]
+    # Fallback: slug match when canonical practice_area name differs from caller input.
     all_rows = query_structured("SELECT practice_area, payload FROM acceptance_criteria")
     needle = slugify(practice_area)
     for row in all_rows:
@@ -137,6 +144,7 @@ def match_practice_area(case_type: str) -> str | None:
         if needle in area_slug or area_slug in needle:
             return area
 
+    # Last resort: token overlap scoring when alias and substring matches fail.
     best: tuple[int, str] | None = None
     needle_tokens = set(needle.split("_"))
     for area in areas:
@@ -188,6 +196,7 @@ def lookup_sol_rule(practice_area: str, jurisdiction: str) -> str | None:
     if rows:
         return str(rows[0].get("rule_text") or "") or None
 
+    # Slug fallback when practice_area string does not exactly match DB row.
     all_rows = query_structured(
         "SELECT practice_area, jurisdiction, rule_text FROM sol_rules WHERE jurisdiction = :jur",
         {"jur": jur},

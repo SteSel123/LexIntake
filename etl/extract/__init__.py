@@ -1,4 +1,4 @@
-"""Extract stage: read raw knowledge-base sources into document records."""
+"""Extract stage: lazy export of ``extract_all`` to avoid circular imports."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ __all__ = ["extract_all"]
 
 
 def __getattr__(name: str) -> Any:
+    """Defer import of ``documents`` until ``extract_all`` is actually accessed."""
     if name == "extract_all":
         from etl.extract.documents import extract_all
 

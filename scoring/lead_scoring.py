@@ -1,4 +1,10 @@
-"""Deterministic Lead Scoring Engine for LexIntake."""
+"""
+Deterministic Lead Scoring Engine for LexIntake.
+
+Combines SOL, conflict, case value, acceptance criteria, practice-area fit,
+and attorney availability into a 0–100 score and SCHEDULE_CONSULT / REVIEW /
+REJECT decision. Same inputs always produce the same LeadScoreOutput.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +40,7 @@ _logger = get_console_logger("scoring")
 
 
 def _observe_score(score: int, estimate: float | None, escalate: bool, reason: str = "") -> None:
+    """Emit monitoring metrics; failures are swallowed so scoring never breaks."""
     try:
         from monitoring.logger import log_case_value, log_escalation, log_event, log_lead_score
 
@@ -52,6 +59,7 @@ def _observe_score(score: int, estimate: float | None, escalate: bool, reason: s
 
 
 def _log_attorney_route(name: str) -> None:
+    """Record attorney assignment for routing analytics (best-effort)."""
     try:
         from monitoring.logger import log_event
 
@@ -64,17 +72,23 @@ Decision = Literal["SCHEDULE_CONSULT", "REJECT", "REVIEW"]
 
 
 class SOLContext(BaseModel):
+    """Statute-of-limitations screening result from check_statute_of_limitations."""
+
     valid: bool | None = None
     expires_in: int | None = None
     explanation: str = ""
 
 
 class ConflictContext(BaseModel):
+    """Conflict-of-interest screening result from conflict_check."""
+
     conflict: bool | None = None
     details: list[Any] = Field(default_factory=list)
 
 
 class CaseValueContext(BaseModel):
+    """Settlement estimate from estimate_case_value."""
+
     estimate: float | None = None
     range_low: float | None = None
     range_high: float | None = None
@@ -102,6 +116,7 @@ class AcceptanceCriteriaContext(BaseModel):
     practice_area_match: bool | None = None
 
     def resolved_matched(self) -> list[str]:
+        """Normalize legacy/count-only acceptance payloads to a matched list."""
         if self.matched:
             return list(self.matched)
         if self.must_have_matched:
@@ -111,6 +126,7 @@ class AcceptanceCriteriaContext(BaseModel):
         return []
 
     def resolved_unmet(self) -> list[str]:
+        """Normalize legacy/count-only acceptance payloads to an unmet list."""
         if self.unmet_required:
             return list(self.unmet_required)
         if self.must_have_unmet:
@@ -121,6 +137,8 @@ class AcceptanceCriteriaContext(BaseModel):
 
 
 class LeadScoreContext(BaseModel):
+    """All structured inputs required by score_lead()."""
+
     sol: SOLContext = Field(default_factory=SOLContext)
     conflict: ConflictContext = Field(default_factory=ConflictContext)
     case_value: CaseValueContext = Field(default_factory=CaseValueContext)
@@ -140,12 +158,15 @@ class LeadScoreContext(BaseModel):
         return value
 
     def acceptance(self) -> AcceptanceCriteriaContext:
+        """Return acceptance criteria as a typed model regardless of input shape."""
         if isinstance(self.acceptance_criteria, AcceptanceCriteriaContext):
             return self.acceptance_criteria
         return AcceptanceCriteriaContext.model_validate(self.acceptance_criteria)
 
 
 class LeadScoreOutput(BaseModel):
+    """Final scoring decision exposed to intake API, UI, and agents."""
+
     qualified: bool
     lead_score: int = Field(..., ge=0, le=100)
     priority: Priority
@@ -155,10 +176,12 @@ class LeadScoreOutput(BaseModel):
 
 
 def _clamp_score(value: float) -> int:
+    """Round and bound raw float score to integer 0–100."""
     return int(max(0, min(100, round(value))))
 
 
 def _decision_from_score(score: int) -> tuple[bool, Priority, Decision]:
+    """Map clamped score to qualified flag, priority band, and decision label."""
     if score >= SCORE_SCHEDULE_MIN:
         return True, "High", "SCHEDULE_CONSULT"
     if score >= SCORE_REVIEW_MIN:
@@ -167,6 +190,7 @@ def _decision_from_score(score: int) -> tuple[bool, Priority, Decision]:
 
 
 def _format_citations(citations: list[KBCitation]) -> str:
+    """Render KB citation metadata for human-readable explanation text."""
     if not citations:
         return ""
     lines = [
@@ -383,6 +407,7 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
 
 
 if __name__ == "__main__":
+    # Smoke test + determinism assertion for local debugging.
     sample = {
         "sol": {
             "valid": True,

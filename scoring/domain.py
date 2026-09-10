@@ -1,4 +1,9 @@
-"""Shared scoring-domain helpers (uncertainty, decision post-process)."""
+"""
+Shared scoring-domain helpers (uncertainty detection, decision post-process).
+
+Keeps narrative-uncertainty logic out of score_lead() so the core engine stays
+purely deterministic on structured tool inputs.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from scoring.constants import INSUFFICIENT_DATA_MSG, SCORE_REVIEW_MIN
 if TYPE_CHECKING:
     from scoring.lead_scoring import LeadScoreOutput
 
+# Substrings in free-text narrative that signal incomplete intake data.
 UNCERTAIN_WORDS: tuple[str, ...] = (
     "unclear",
     "missing",

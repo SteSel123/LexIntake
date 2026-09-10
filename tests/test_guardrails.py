@@ -1,4 +1,8 @@
-"""Guardrail self-check tests."""
+"""Tests for intake guardrails: disclaimer presence and message enforcement.
+
+Verifies ``self_check`` flags missing disclaimers and ``enforce_message_guardrails``
+appends required legal language.
+"""
 
 from __future__ import annotations
 

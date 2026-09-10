@@ -1,5 +1,8 @@
 """Initial clients, attorneys, and past_cases schema (PostgreSQL).
 
+Creates CRM-style structured tables for conflict checks, routing demos, and
+past-case retrieval. Indexed on state, availability, practice area, and FKs.
+
 Revision ID: 001_initial
 Revises:
 Create Date: 2026-09-02
@@ -20,6 +23,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     created_at = sa.text("CURRENT_TIMESTAMP")
+
+    # --- clients -------------------------------------------------------------
     op.create_table(
         "clients",
         sa.Column("id", sa.Text(), nullable=False),
@@ -32,6 +37,7 @@ def upgrade() -> None:
     )
     op.create_index("idx_clients_state", "clients", ["state"])
 
+    # --- attorneys -----------------------------------------------------------
     op.create_table(
         "attorneys",
         sa.Column("id", sa.Text(), nullable=False),
@@ -45,6 +51,7 @@ def upgrade() -> None:
     )
     op.create_index("idx_attorneys_availability", "attorneys", ["availability"])
 
+    # --- past_cases (links clients + attorneys) ------------------------------
     op.create_table(
         "past_cases",
         sa.Column("id", sa.Text(), nullable=False),

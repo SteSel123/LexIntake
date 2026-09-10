@@ -1,4 +1,9 @@
-"""Agno tool: conflict check against structured clients table."""
+"""
+Agno tool: conflict check against structured clients table.
+
+Searches existing client records for name overlap with the prospective client
+or opposing party. Uses substring matching (not exact-only) to catch variants.
+"""
 
 from __future__ import annotations
 
@@ -11,11 +16,15 @@ from tools.common import logger, query_structured, tool_timer
 
 
 class ConflictCheckInput(BaseModel):
+    """Prospective client and opposing party names to screen."""
+
     name: str = Field(..., description="Prospective client name")
     opposing_party: str = Field(..., description="Known opposing party name")
 
 
 class ConflictMatch(BaseModel):
+    """One client row that matched a screening target."""
+
     id: str
     name: str
     email: str | None = None
@@ -25,12 +34,15 @@ class ConflictMatch(BaseModel):
 
 
 class ConflictCheckOutput(BaseModel):
+    """Conflict screening result; conflict=True triggers hard reject in scoring."""
+
     conflict: bool
     details: list[ConflictMatch]
     explanation: str = ""
 
 
 def _normalize(value: str) -> str:
+    """Case-insensitive, whitespace-collapsed name for fuzzy equality checks."""
     return " ".join(value.casefold().split())
 
 
@@ -48,6 +60,7 @@ def conflict_check(payload: ConflictCheckInput) -> ConflictCheckOutput:
 
 
 def _conflict_check_impl(payload: ConflictCheckInput) -> ConflictCheckOutput:
+    """Core conflict logic; wrapped by Agno tool for timing and error boundaries."""
     try:
         rows = query_structured(
             "SELECT id, name, email, phone, state FROM clients ORDER BY name"
@@ -72,6 +85,7 @@ def _conflict_check_impl(payload: ConflictCheckInput) -> ConflictCheckOutput:
             for label, target in targets.items():
                 if not target:
                     continue
+                # Bidirectional substring match catches partial / reversed name forms.
                 if target == client_name or target in client_name or client_name in target:
                     matches.append(
                         ConflictMatch(

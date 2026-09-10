@@ -1,4 +1,8 @@
-"""Split cleaned documents into retrieval-friendly chunks."""
+"""Split cleaned documents into retrieval-friendly overlapping chunks.
+
+Chunk size and overlap balance recall (enough context per hit) against embedding
+cost; ``chunk_id`` is derived from content hash so re-runs upsert in place.
+"""
 
 from __future__ import annotations
 

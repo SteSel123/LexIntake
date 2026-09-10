@@ -1,4 +1,8 @@
-"""Clean and normalize extracted KB documents."""
+"""Clean and normalize extracted KB documents before deduplication.
+
+Unicode normalization and whitespace collapse keep embeddings stable across
+platforms; empty documents are dropped so they never reach the vector store.
+"""
 
 from __future__ import annotations
 

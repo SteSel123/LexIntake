@@ -1,4 +1,8 @@
-"""Result viewer for intake analysis output."""
+"""Structured display of intake screening payloads in Streamlit.
+
+Maps the JSON result from ``run_intake_analysis`` / interview screening into
+metrics, explanation, citations, guardrail flags, and expandable tool metadata.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from frontend.components.disclaimer import render_disclaimer, render_escalation_
 
 
 def render_results(payload: dict[str, Any]) -> None:
+    """Render a full screening result dict produced by the intake service."""
     if payload.get("escalate"):
         render_escalation_banner()
 

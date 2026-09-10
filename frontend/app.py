@@ -1,4 +1,9 @@
-"""LexIntake frontend (Streamlit) — multi-turn interview + quick analysis."""
+"""LexIntake Streamlit UI: multi-turn interview and single-pass quick analysis.
+
+Two tabs share the same intake pipeline via ``backend.services.intake_service``:
+Interview walks prospects through Q&A until facts are complete; Quick analysis
+accepts a pasted case description for demo and evaluation scenarios.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from frontend.components.footer import render_footer
 from frontend.components.header import render_header
 from frontend.components.result_viewer import render_results
 
+# Branding and readability overrides for Streamlit's default light theme.
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap');
 
@@ -103,6 +109,7 @@ h1, h2, h3, h4, .stHeading, [data-testid="stHeading"] {
 }
 """
 
+# Pre-built case descriptions for the Quick analysis sidebar (matches demo.py scenarios).
 EXAMPLES = {
     "Valid Personal Injury": (
         "Rear-end collision in CA, clear liability, $45k damages, incident 6 months ago."
@@ -120,6 +127,7 @@ EXAMPLES = {
 
 
 def _ensure_interview():
+    """Lazily create an InterviewSession and seed chat history in Streamlit state."""
     from agents.interview.agent import InterviewSession
 
     if "interview" not in st.session_state:
@@ -134,6 +142,7 @@ def _ensure_interview():
 
 
 def _render_interview_tab() -> None:
+    """Multi-turn chat UI: collect facts, then run screening when the session completes."""
     st.markdown("### Prospective client interview")
     st.caption(
         "Multi-turn intake: the agent asks follow-up questions, then screens the lead. "
@@ -184,6 +193,7 @@ def _render_interview_tab() -> None:
 
 
 def _render_quick_tab() -> None:
+    """Single-pass intake: paste a narrative and run the full agent pipeline once."""
     with st.sidebar:
         st.markdown("### Demo scenarios")
         choice = st.selectbox("Load example", ["(custom)"] + list(EXAMPLES.keys()))
@@ -222,6 +232,7 @@ def _render_quick_tab() -> None:
 
 
 def main() -> None:
+    """Streamlit entrypoint: layout, API-key guard, tabs, shared footer."""
     st.set_page_config(
         page_title="LexIntake",
         page_icon="⚖️",
@@ -233,6 +244,7 @@ def main() -> None:
     render_header()
     render_disclaimer(compact=True)
 
+    # Block intake tabs when no API key is configured (embeddings + LLM required).
     try:
         from config import OPENAI_API_KEY
 

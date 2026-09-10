@@ -1,4 +1,8 @@
-"""Intake screening agent."""
+"""Intake screening agent package.
+
+Exports ``IntakeAgent``, fact/response models, prompt constants, and free-text
+parsers used by both staff-facing screening and the interview flow.
+"""
 
 from agents.intake.agent import IntakeAgent, build_default_agent
 from agents.intake.constants import LEGAL_DISCLAIMER, UNCERTAINTY_ESCALATION

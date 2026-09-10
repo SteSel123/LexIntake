@@ -1,4 +1,8 @@
-"""Alembic environment for LexIntake (PostgreSQL)."""
+"""Alembic environment for LexIntake (PostgreSQL).
+
+Binds Alembic to ``db.models.Base.metadata`` and resolves ``sqlalchemy.url`` from
+``DATABASE_URL`` when ini placeholders are still present.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Replace template/placeholder URLs with the live DATABASE_URL from config.py.
 _PLACEHOLDER_URLS = {
     "sqlite:///lexintake.db",
     "driver://user:pass@localhost/dbname",
@@ -27,6 +32,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Emit SQL to stdout/script without a live DB connection."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -39,6 +45,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations against a connected engine (normal ``alembic upgrade`` path)."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

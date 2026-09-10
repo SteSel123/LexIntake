@@ -1,4 +1,8 @@
-"""Central stdlib logging for LexIntake console output."""
+"""Central stdlib logging for LexIntake console output.
+
+Provides one configured ``lexintake`` root logger so modules share formatting
+without each attaching duplicate StreamHandlers.
+"""
 
 from __future__ import annotations
 

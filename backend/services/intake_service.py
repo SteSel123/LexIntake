@@ -1,4 +1,8 @@
-"""Intake application service — shared by API, frontend demo, and CLI."""
+"""Intake application service — shared by API, frontend demo, and CLI.
+
+Orchestrates fact parsing, agent screening, lead scoring, and JSON payload
+assembly so HTTP routes and other entrypoints share one consistent pipeline.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +28,12 @@ __all__ = [
 def build_result_payload(
     response: IntakeResponse, facts: IntakeFacts, description: str
 ) -> dict[str, Any]:
+    """Merge agent output, citations, lead score, and guardrail flags into one dict.
+
+    Lead scoring runs after the agent returns so decision/explanation reflect
+    both LLM reasoning and deterministic scoring rules (including uncertain-
+    narrative overrides that force REVIEW/escalation).
+    """
     tools = response.tool_results or {}
     citations = [
         {
@@ -70,7 +80,11 @@ def finalize_screening_payload(
     facts: IntakeFacts,
     narrative: str,
 ) -> dict[str, Any]:
-    """Attach latency/cost/facts after build_result_payload (API + frontend)."""
+    """Attach latency, cost, and parsed facts after ``build_result_payload``.
+
+    Used when the interview agent finishes and returns a full ``IntakeResponse``
+    so the API can expose the same shape as the one-shot ``/analyze`` endpoint.
+    """
     payload = build_result_payload(screening, facts, narrative)
     payload["latency_ms"] = float(getattr(screening, "latency_ms", 0) or 0)
     payload["cost"] = float(getattr(screening, "cost", 0) or 0)
@@ -83,7 +97,11 @@ def run_intake_analysis(
     *,
     agent: IntakeAgent | None = None,
 ) -> dict[str, Any]:
-    """Run production intake pipeline and return JSON-ready payload."""
+    """Run the production intake pipeline and return a JSON-ready payload.
+
+    Parses facts from free text, invokes ``IntakeAgent.run_intake``, scores the
+    lead, and records wall-clock latency plus optional LLM cost from the agent.
+    """
     agent = agent or IntakeAgent()
     facts = parse_case_description(description)
     started = time.perf_counter()

@@ -1,4 +1,8 @@
-"""Compose the ETL stages: extract → transform → (embed + load)."""
+"""Orchestrate the full KB ETL pipeline: extract → transform → embed → load.
+
+Exposes stage functions individually for tests and incremental tooling; ``run_pipeline``
+is the CLI entrypoint used by Docker init and local setup.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +28,7 @@ def run_pipeline(
     chunks = stages["chunks"]
     enriched = stages["enriched"]
 
+    # Skip DB lookup on full refresh so every chunk gets re-embedded.
     existing = {} if full_refresh else existing_by_id()
     embedded, embed_stats = embed(enriched, existing_by_id=existing)
     load_stats = load(

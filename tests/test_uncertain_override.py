@@ -1,4 +1,8 @@
-"""Tests for uncertain-narrative post-processor and payload assembly."""
+"""Tests for uncertain-narrative override and ``build_result_payload`` assembly.
+
+Ensures incomplete or ambiguous narratives force REVIEW even when raw scores
+would otherwise schedule a consult.
+"""
 
 from __future__ import annotations
 

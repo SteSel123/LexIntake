@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Interview agent prompt catalog (multi-turn chat intake).
+
+  - welcome / closing / empty_reply: conversational shell text
+  - field_prompts: next question per missing IntakeFacts field
+  - extract_fields: structured LLM extraction of user replies into facts
+-->
 <prompts agent="interview">
   <text id="welcome"><![CDATA[Welcome to LexIntake intake screening.
 

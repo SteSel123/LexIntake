@@ -1,4 +1,9 @@
-"""Extract raw knowledge-base documents from kb/."""
+"""Extract raw knowledge-base documents from ``kb/`` into uniform records.
+
+Each KB file shape (flat list, keyed object, keyed list, markdown) is flattened
+into dicts with ``source``, ``doc_type``, ``practice_area``, and ``text`` so later
+transform stages can treat all sources the same way.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 KB_DIR = ROOT / "kb"
 
+# JSON file inventory (some handled individually below for shape-specific flatteners).
 JSON_SOURCES = [
     "practice_areas.json",
     "acceptance_criteria.json",
@@ -25,11 +31,13 @@ MARKDOWN_SOURCES = [
 
 
 def _read_json(path: Path) -> Any:
+    """Load a UTF-8 JSON file from disk."""
     with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
 def _flatten_practice_areas(data: list[str], source: str) -> list[dict[str, Any]]:
+    """One document per practice-area name (used for scope filtering in retrieval)."""
     return [
         {
             "source": source,
@@ -43,6 +51,7 @@ def _flatten_practice_areas(data: list[str], source: str) -> list[dict[str, Any]
 
 
 def _flatten_keyed_object(data: dict[str, Any], source: str, doc_type: str) -> list[dict[str, Any]]:
+    """One document per practice-area key (acceptance, fees, SOL tables)."""
     docs: list[dict[str, Any]] = []
     for practice_area, payload in data.items():
         docs.append(
@@ -58,6 +67,7 @@ def _flatten_keyed_object(data: dict[str, Any], source: str, doc_type: str) -> l
 
 
 def _flatten_keyed_list(data: dict[str, list[Any]], source: str, doc_type: str) -> list[dict[str, Any]]:
+    """One document per list item under each practice-area key (cases, attorneys, clients)."""
     docs: list[dict[str, Any]] = []
     for practice_area, items in data.items():
         for index, item in enumerate(items):
@@ -75,6 +85,7 @@ def _flatten_keyed_list(data: dict[str, list[Any]], source: str, doc_type: str) 
 
 
 def _flatten_markdown(path: Path, source: str) -> list[dict[str, Any]]:
+    """Treat an entire markdown file as one FAQ document for chunking."""
     text = path.read_text(encoding="utf-8")
     return [
         {

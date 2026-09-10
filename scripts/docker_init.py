@@ -1,4 +1,7 @@
-"""One-shot container entrypoint: schema seed + ETL into Postgres."""
+"""One-shot Docker init: seed structured DB then run the KB ETL pipeline.
+
+Invoked by the ``init`` Compose service so Postgres is populated before API/UI start.
+"""
 from __future__ import annotations
 
 import subprocess
@@ -6,6 +9,7 @@ import sys
 
 
 def main() -> None:
+    """Run init_structured_db and etl.pipeline sequentially; fail fast on error."""
     steps = [
         [sys.executable, "-m", "db.init_structured_db"],
         [sys.executable, "-m", "etl.pipeline"],

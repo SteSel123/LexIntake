@@ -1,4 +1,8 @@
-"""Unit tests for deterministic lead scoring."""
+"""Tests for ``scoring.lead_scoring``: deterministic score bands and hard reject rules.
+
+Covers SOL expiry, conflict detection, and SCHEDULE/REVIEW/REJECT thresholds without
+calling a live LLM.
+"""
 
 from __future__ import annotations
 

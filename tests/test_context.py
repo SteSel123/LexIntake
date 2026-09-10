@@ -1,4 +1,7 @@
-"""Acceptance criteria builder tests."""
+"""Tests for ``scoring.context`` acceptance-criteria and lead-score context building.
+
+Ensures matched/unmet signals come from real KB criteria, not placeholder strings.
+"""
 
 from __future__ import annotations
 

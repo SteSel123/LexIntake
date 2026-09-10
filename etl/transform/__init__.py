@@ -1,4 +1,4 @@
-"""Transform stage: clean, deduplicate, chunk, enrich, and embed documents."""
+"""Transform stage: lazy re-exports for clean, chunk, embed, and metadata helpers."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
+    """Route attribute access to the concrete transform submodule on first use."""
     if name in {"clean_all", "clean_document", "normalize_text"}:
         from etl.transform import clean as module
 

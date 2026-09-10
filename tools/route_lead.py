@@ -1,4 +1,10 @@
-"""Agno tool: route intake lead to an attorney."""
+"""
+Agno tool: route intake lead to an attorney.
+
+Selects the best-fit available attorney for a practice area using availability
+rules, lowest caseload, then highest experience. Returns empty name when no
+match exists so scoring can proceed without a routing boost.
+"""
 
 from __future__ import annotations
 
@@ -17,20 +23,26 @@ from tools.common import (
     tool_timer,
 )
 
+# Maps lead priority to numeric rank for availability gating (waitlist = high only).
 PRIORITY_RANK = {"high": 3, "medium": 2, "low": 1}
 
 
 class RouteLeadInput(BaseModel):
+    """Practice area and intake priority for attorney assignment."""
+
     practice_area: str = Field(..., description="Target practice area")
     priority: str = Field(..., description="low | medium | high")
 
 
 class RouteLeadOutput(BaseModel):
+    """Assigned attorney (may be empty) plus human-readable routing rationale."""
+
     attorney_name: str
     motivation: str
 
 
 def _jurisdictions(raw: str | None) -> list[str]:
+    """Parse jurisdictions column (JSON array or comma-separated string)."""
     if not raw:
         return []
     try:
@@ -43,6 +55,7 @@ def _jurisdictions(raw: str | None) -> list[str]:
 
 
 def _practice_area_from_attorney_id(attorney_id: str) -> str | None:
+    """Derive practice area from att-{slug}-* ID convention when present."""
     if not attorney_id.startswith("att-"):
         return None
     rest = attorney_id[4:]
@@ -54,6 +67,7 @@ def _practice_area_from_attorney_id(attorney_id: str) -> str | None:
 
 
 def _is_available(availability: str | None, priority: str) -> bool:
+    """Gate attorneys by status; limited/waitlist accept higher-priority leads only."""
     status = slugify(availability or "")
     if status in {"accepting_new_clients"}:
         return True
@@ -78,6 +92,7 @@ def route_lead(payload: RouteLeadInput) -> RouteLeadOutput:
 
 
 def _route_lead_impl(payload: RouteLeadInput) -> RouteLeadOutput:
+    """Core routing logic; wrapped by Agno tool for timing and error boundaries."""
     try:
         practice_area = match_practice_area(payload.practice_area) or payload.practice_area
         attorneys = query_structured(
@@ -112,6 +127,7 @@ def _route_lead_impl(payload: RouteLeadInput) -> RouteLeadOutput:
             id_area = _practice_area_from_attorney_id(attorney_id)
             matches_area = bool(id_area and slugify(id_area) == area_slug)
 
+            # Token overlap on specialization when ID prefix does not encode area.
             if not matches_area:
                 tokens = set(area_slug.split("_")) - {"law"}
                 spec_tokens = set(slugify(specialization).split("_"))

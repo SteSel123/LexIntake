@@ -27,8 +27,9 @@ def load(
     dimensions: int | None = None,
     recreate_on_dim_mismatch: bool = False,
 ) -> dict[str, Any]:
-    """Persist embedded chunks to PostgreSQL kb_docs."""
+    """Persist embedded chunks to PostgreSQL kb_docs (upsert by chunk_id)."""
     dims = dimensions or DEFAULT_DIMENSIONS
+    # Create or migrate kb_docs table; optionally drop/recreate on dim change.
     ensure_kb_docs(dimensions=dims, recreate_on_dim_mismatch=recreate_on_dim_mismatch)
     stats = upsert_kb_docs(records, dimensions=dims)
     return {

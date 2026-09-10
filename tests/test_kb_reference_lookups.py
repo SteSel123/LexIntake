@@ -1,4 +1,8 @@
-"""Tests for Postgres-backed KB reference lookups (mocked query layer)."""
+"""Tests for Postgres-backed KB reference lookups via ``tools.common``.
+
+Mocks ``query_structured`` to verify practice areas, SOL rules, and acceptance
+criteria load from the structured DB layer.
+"""
 
 from __future__ import annotations
 

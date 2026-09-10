@@ -1,4 +1,8 @@
-"""Generate embeddings for chunked KB documents (OpenAI)."""
+"""Generate embeddings for chunked KB documents via OpenAI (Agno adapter).
+
+Supports incremental loads: unchanged chunks reuse stored vectors when model,
+dimensions, and ``content_hash`` all match the existing row.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +34,8 @@ DEFAULT_DIMENSIONS = EMBED_DIMS
 
 
 class Embedder(Protocol):
+    """Minimal interface the ETL pipeline expects from any embedding backend."""
+
     model_name: str
     dimensions: int
 
@@ -84,6 +90,7 @@ def get_embedder(provider: str | None = None) -> Embedder:
 
 
 def _needs_embedding(chunk: dict[str, Any], existing: dict[str, Any] | None, model: Embedder) -> bool:
+    """True when no prior row exists or model/dims/content changed since last load."""
     if not existing:
         return True
     if existing.get("embedding_model") != model.model_name:

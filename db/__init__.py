@@ -1,4 +1,8 @@
-"""LexIntake database package: PostgreSQL entities + pgvector kb_docs."""
+"""LexIntake database package: PostgreSQL entities + pgvector kb_docs.
+
+Public surface re-exports structured-table helpers (Alembic init, seeding,
+raw SQL queries) and vector-store operations used by RAG tools and ETL.
+"""
 
 from .pgvector_store import (
     count_rows as count_kb_docs,

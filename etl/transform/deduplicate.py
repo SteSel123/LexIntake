@@ -1,4 +1,8 @@
-"""Deduplicate cleaned documents before chunking."""
+"""Deduplicate cleaned documents before chunking.
+
+``content_hash`` enables idempotent ETL: unchanged KB rows skip re-embedding when
+their hash matches a row already stored in ``kb_docs``.
+"""
 
 from __future__ import annotations
 

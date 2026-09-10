@@ -1,4 +1,8 @@
-"""Structured PostgreSQL database: Alembic schema + seed from kb/."""
+"""Structured PostgreSQL database: Alembic schema + seed from kb/.
+
+Applies migrations to head, loads JSON fixtures from ``kb/`` into relational
+tables, and exposes ``query_rows`` for Agno tools that need ad-hoc SQL reads.
+"""
 
 from __future__ import annotations
 
@@ -23,20 +27,32 @@ from tools.common import slugify
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Paths and revision id used to detect whether Alembic upgrade is needed.
 KB_DIR = ROOT / "kb"
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
 HEAD_REVISION = "003_kb_ref"
 
 
+# --- Public read API -------------------------------------------------------
+
+
 def query_rows(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Read helper used by Agno tools."""
+    """Read helper used by Agno tools.
+
+    Ensures schema is at head before executing parameterized raw SQL and
+    returning rows as plain dicts (no ORM objects).
+    """
     upgrade_schema()
     with session_scope() as session:
         result = session.execute(text(sql), params or {})
         return [dict(row) for row in result.mappings()]
 
 
+# --- Alembic migration helpers ---------------------------------------------
+
+
 def _alembic_config():
+    """Build Alembic Config pointing at this package's migrations and DATABASE_URL."""
     from alembic.config import Config
 
     cfg = Config(str(ALEMBIC_INI))
@@ -46,6 +62,7 @@ def _alembic_config():
 
 
 def _current_revision(engine: Engine) -> str | None:
+    """Return stamped Alembic revision, or ``None`` if ``alembic_version`` is absent."""
     if "alembic_version" not in inspect(engine).get_table_names():
         return None
     with engine.connect() as connection:
@@ -72,25 +89,36 @@ def init_schema() -> None:
     upgrade_schema()
 
 
+# --- Deterministic id helpers for kb/ seed rows ----------------------------
+
+
 def _attorney_id(name: str, practice_area: str) -> str:
+    """Stable attorney primary key derived from name and practice area slug."""
     return f"att-{slugify(practice_area)}-{slugify(name)}"
 
 
 def _case_id(practice_area: str, title: str, index: int) -> str:
+    """Stable past-case id: practice area, ordinal, and truncated title slug."""
     return f"case-{slugify(practice_area)}-{index + 1:03d}-{slugify(title)[:40]}"
 
 
 def _sol_rule_id(practice_area: str, jurisdiction: str) -> str:
+    """Stable SOL rule id from practice area and jurisdiction slugs."""
     return f"sol-{slugify(practice_area)}-{slugify(jurisdiction)}"
 
 
 def _read_kb_json(filename: str) -> Any:
+    """Load one JSON fixture from ``kb/`` (raises if missing)."""
     path = KB_DIR / filename
     with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
+# --- PostgreSQL upsert helpers (idempotent seed) ---------------------------
+
+
 def _upsert(session, model, row: dict[str, Any], pk: str, update_fields: tuple[str, ...]) -> None:
+    """INSERT … ON CONFLICT DO UPDATE for one ORM model row."""
     stmt = pg_insert(model).values(**row)
     stmt = stmt.on_conflict_do_update(
         index_elements=[pk],
@@ -100,10 +128,12 @@ def _upsert(session, model, row: dict[str, Any], pk: str, update_fields: tuple[s
 
 
 def upsert_client(session, row: dict[str, Any]) -> None:
+    """Upsert a ``clients`` row by primary key ``id``."""
     _upsert(session, Client, row, "id", ("name", "email", "phone", "state"))
 
 
 def upsert_attorney(session, row: dict[str, Any]) -> None:
+    """Upsert an ``attorneys`` row by primary key ``id``."""
     _upsert(
         session,
         Attorney,
@@ -114,6 +144,7 @@ def upsert_attorney(session, row: dict[str, Any]) -> None:
 
 
 def upsert_past_case(session, row: dict[str, Any]) -> None:
+    """Upsert a ``past_cases`` row by primary key ``id``."""
     _upsert(
         session,
         PastCase,
@@ -133,12 +164,14 @@ def upsert_past_case(session, row: dict[str, Any]) -> None:
 
 
 def upsert_practice_area(session, name: str) -> None:
+    """Insert practice area name if not already present."""
     stmt = pg_insert(PracticeArea).values(name=name)
     stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
     session.execute(stmt)
 
 
 def upsert_sol_rule(session, row: dict[str, Any]) -> None:
+    """Upsert a ``sol_rules`` row by primary key ``id``."""
     _upsert(
         session,
         SolRule,
@@ -149,6 +182,7 @@ def upsert_sol_rule(session, row: dict[str, Any]) -> None:
 
 
 def upsert_acceptance_criteria(session, practice_area: str, payload: dict[str, Any]) -> None:
+    """Upsert JSON acceptance criteria for one practice area."""
     _upsert(
         session,
         AcceptanceCriteria,
@@ -158,8 +192,15 @@ def upsert_acceptance_criteria(session, practice_area: str, payload: dict[str, A
     )
 
 
+# --- Seed orchestration ----------------------------------------------------
+
+
 def seed_from_kb() -> dict[str, int]:
-    """Idempotent seed from kb/*.json into structured tables."""
+    """Idempotent seed from kb/*.json into structured tables.
+
+    Re-running updates existing rows via upsert; returns per-table insert counts
+    for CLI reporting (counts reflect loop iterations, not net new rows).
+    """
     upgrade_schema()
 
     practice_areas = _read_kb_json("practice_areas.json")
@@ -269,6 +310,7 @@ def seed_from_kb() -> dict[str, int]:
 
 
 def table_counts() -> dict[str, int]:
+    """Return row counts for all structured seed tables."""
     with session_scope() as session:
         return {
             "practice_areas": session.scalar(select(func.count()).select_from(PracticeArea)) or 0,
@@ -284,7 +326,11 @@ def table_counts() -> dict[str, int]:
 
 
 def init_db(*, seed: bool = True) -> dict[str, Any]:
-    """Migrate schema and optionally seed from the knowledge base."""
+    """Migrate schema and optionally seed from the knowledge base.
+
+    Returns connection metadata, seed summary, and post-seed table counts for
+    operational logging and health checks.
+    """
     upgrade_schema()
     seeded = (
         seed_from_kb()
@@ -307,6 +353,7 @@ def init_db(*, seed: bool = True) -> dict[str, Any]:
     }
 
 
+# CLI entry when run as ``python -m db.structured_db``.
 if __name__ == "__main__":
     result = init_db(seed=True)
     print("PostgreSQL ready")
