@@ -14,8 +14,6 @@ from agents.intake.constants import SENTINEL_NAME, SENTINEL_PARTY
 from agents.intake.models import IntakeFacts
 from tools.common import PRACTICE_TEXT_HINTS
 
-# Supported US state codes for jurisdiction inference from narrative text
-_STATE_RE = re.compile(r"\b(CA|NV|AZ|TX|FL|NY|WA|IL|OR|CO|GA)\b", re.I)
 _MONEY_RE = re.compile(r"\$?\s*([\d,]+(?:\.\d+)?)\s*k\b|\$\s*([\d,]+(?:\.\d+)?)", re.I)
 _YEARS_AGO_RE = re.compile(r"(\d+)\s*years?\s*ago", re.I)
 _MONTHS_AGO_RE = re.compile(r"(\d+)\s*months?\s*ago", re.I)
@@ -29,6 +27,72 @@ _NAMED_MONTH_FORMATS = (
     "%B %d %Y",  # June 15 2024
     "%b %d %Y",
 )
+
+# US state / DC codes accepted as jurisdiction.
+US_STATE_CODES = frozenset(
+    {
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+        "DC",
+    }
+)
+_STATE_NAME_TO_CODE = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
+    "district of columbia": "DC",
+    "washington dc": "DC",
+}
 
 
 def _today() -> date:
@@ -81,6 +145,53 @@ def _parse_numeric_date(text: str) -> date | None:
         parsed = _safe_date(y, m, d)
         if parsed is not None:
             return parsed
+    return None
+
+
+def is_valid_jurisdiction(value: str | None) -> bool:
+    """Return True when ``value`` is a recognized US state / DC code."""
+    if not value:
+        return False
+    return value.strip().upper() in US_STATE_CODES
+
+
+def infer_jurisdiction(text: str) -> str | None:
+    """Extract a US state / DC code from free text, or ``None`` if unknown.
+
+    Accepts 2-letter codes and common full state names. Avoids false positives
+    from English words like ``in`` / ``or`` / ``me`` mid-sentence.
+    """
+    if not (text or "").strip():
+        return None
+
+    # Exact whole-answer code: "CA" / "ca"
+    token = text.strip().upper()
+    if token in US_STATE_CODES:
+        return token
+
+    lower = text.lower()
+    # Prefer longer names first (e.g. "new york" before shorter tokens).
+    for name in sorted(_STATE_NAME_TO_CODE, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(name)}\b", lower):
+            return _STATE_NAME_TO_CODE[name]
+
+    # Uppercase codes in the original text ("crash in CA").
+    for match in re.finditer(r"\b([A-Z]{2})\b", text):
+        code = match.group(1)
+        if code in US_STATE_CODES:
+            return code
+
+    # Explicit "in ca" / "state of ny" with lowercase codes.
+    tagged = re.search(
+        r"\b(?:in|state(?:\s+of)?)\s+([A-Za-z]{2})\b",
+        text,
+        flags=re.I,
+    )
+    if tagged:
+        code = tagged.group(1).upper()
+        if code in US_STATE_CODES:
+            return code
+
     return None
 
 
@@ -171,8 +282,7 @@ def parse_case_description(description: str) -> IntakeFacts:
     """Build a full ``IntakeFacts`` record from a single free-text case description."""
     text = (description or "").strip()
     practice = infer_practice_area(text)
-    state = _STATE_RE.search(text)
-    jurisdiction = state.group(1).upper() if state else None
+    jurisdiction = infer_jurisdiction(text)
     name, opposing = infer_name_and_party(text)
     damages = infer_damages(text)
     severity = infer_severity(text)

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from agents.intake.constants import SENTINEL_NAME, SENTINEL_PARTY
 from agents.intake.models import IntakeFacts
 from agents.intake.plan import build_plan
-from agents.interview.agent import InterviewSession
+from agents.interview.agent import ChatMessage, InterviewSession
 
 
 def test_build_plan_schedules_core_tools():
@@ -47,3 +47,26 @@ def test_interview_missing_fields_treats_sentinels_as_incomplete():
     missing = session.missing_fields()
     assert "name" in missing
     assert "opposing_party" in missing
+
+
+def test_interview_rejects_invalid_jurisdiction_and_keeps_asking():
+    session = InterviewSession(agent=MagicMock())
+    session.phase = "collecting"
+    session.facts = IntakeFacts(practice_area="Personal Injury", case_type="Personal Injury")
+    session.messages.append(
+        ChatMessage(
+            role="assistant",
+            content="In which US state did this occur (e.g., CA, NV, NY)?",
+        )
+    )
+    session.agent.complete_structured = MagicMock(return_value=None)
+
+    turn = session.respond("I don't know")
+    assert turn.done is False
+    assert "jurisdiction" in turn.missing_fields
+    assert session.facts.jurisdiction is None
+
+    turn_ok = session.respond("CA")
+    assert session.facts.jurisdiction == "CA"
+    assert "jurisdiction" not in session.missing_fields()
+    assert turn_ok.done is False

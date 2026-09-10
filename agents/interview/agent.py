@@ -76,6 +76,8 @@ class InterviewSession:
 
     def missing_fields(self) -> list[str]:
         """Return required field keys still empty or holding placeholder sentinel values."""
+        from agents.intake.fact_parse import is_valid_jurisdiction
+
         values = self.facts.model_dump()
         missing: list[str] = []
         for key in REQUIRED_FIELDS:
@@ -84,7 +86,15 @@ class InterviewSession:
                 missing.append(key)
             elif key == "opposing_party" and (not val or val == SENTINEL_PARTY):
                 missing.append(key)
-            elif key not in {"name", "opposing_party"} and val in (None, "", []):
+            elif key == "jurisdiction" and not is_valid_jurisdiction(
+                str(val) if val is not None else None
+            ):
+                missing.append(key)
+            elif key not in {"name", "opposing_party", "jurisdiction"} and val in (
+                None,
+                "",
+                [],
+            ):
                 missing.append(key)
         return missing
 
@@ -117,31 +127,33 @@ class InterviewSession:
                 break
 
         cleaned = text.strip()
+        from agents.intake.fact_parse import infer_incident_date, infer_jurisdiction
 
+        # Field prompts may ask several things at once — fill only when parse succeeds.
         if "name" in last_q and "full name" in last_q:
             self.facts.name = cleaned[:120]
-        elif "opposing" in last_q or "at-fault" in last_q:
+        if "opposing" in last_q or "at-fault" in last_q:
             self.facts.opposing_party = cleaned[:160]
-        elif "jurisdiction" in last_q or "us state" in last_q:
-            m = re.search(r"\b([A-Za-z]{2})\b", cleaned)
-            self.facts.jurisdiction = (m.group(1) if m else cleaned[:2]).upper()
-        elif "incident" in last_q or "event date" in last_q:
-            from agents.intake.fact_parse import infer_incident_date
-
+        if "jurisdiction" in last_q or "us state" in last_q:
+            inferred_jur = infer_jurisdiction(cleaned)
+            if inferred_jur:
+                self.facts.jurisdiction = inferred_jur
+        if "incident" in last_q or "event date" in last_q:
             inferred = infer_incident_date(cleaned)
-            # Only store normalized ISO dates; leave unset so the interview re-asks.
             if inferred:
                 self.facts.incident_date = inferred
-        elif "damages" in last_q or "losses" in last_q:
+        if "damages" in last_q or "losses" in last_q:
             digits = re.sub(r"[^\d.]", "", cleaned.replace(",", ""))
             if digits:
                 try:
                     self.facts.damages = int(float(digits))
                 except ValueError:
                     pass
-        elif "practice" in last_q or "legal matter" in last_q:
-            self.facts.practice_area = cleaned[:80]
-            self.facts.case_type = cleaned[:80]
+        if "practice" in last_q or "legal matter" in last_q:
+            # Avoid treating a bare state code as the practice area.
+            if not infer_jurisdiction(cleaned) or len(cleaned) > 2:
+                self.facts.practice_area = cleaned[:80]
+                self.facts.case_type = cleaned[:80]
 
         # Always fold narrative signals from the full utterance.
         parsed = parse_case_description(cleaned)
@@ -193,7 +205,7 @@ class InterviewSession:
         )
         if not isinstance(extracted, ExtractedIntakeFields):
             return
-        from agents.intake.fact_parse import infer_incident_date
+        from agents.intake.fact_parse import infer_incident_date, infer_jurisdiction
 
         for key in (
             "name",
@@ -210,6 +222,11 @@ class InterviewSession:
                 normalized = infer_incident_date(str(val))
                 if normalized:
                     self.facts.incident_date = normalized
+                continue
+            if key == "jurisdiction":
+                normalized = infer_jurisdiction(str(val))
+                if normalized:
+                    self.facts.jurisdiction = normalized
                 continue
             setattr(self.facts, key, val)
             if key == "practice_area":
@@ -241,12 +258,19 @@ class InterviewSession:
         self._merge_text_into_facts(text)
         missing = self.missing_fields()
 
+        from agents.intake.fact_parse import is_valid_jurisdiction
+
         # Early exit: user signals done and we have enough context for a meaningful screen
         finish = any(
             p in text.lower()
             for p in ("done", "that's all", "thats all", "screen now", "finish", "ready")
         )
-        if missing and not (finish and self.facts.practice_area and self.facts.jurisdiction):
+        can_finish_early = bool(
+            finish
+            and self.facts.practice_area
+            and is_valid_jurisdiction(self.facts.jurisdiction)
+        )
+        if missing and not can_finish_early:
             self.phase = "collecting"
             msg = self._questions_message(missing)
             # Soft reminder of disclaimer once in a while

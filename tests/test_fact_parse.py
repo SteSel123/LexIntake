@@ -1,6 +1,6 @@
 """Tests for ``agents.intake.fact_parse`` heuristics on free-text case descriptions.
 
-Covers practice-area inference, damage parsing, date normalization, and PI fields.
+Covers practice-area inference, damage parsing, date/jurisdiction normalization.
 """
 
 from __future__ import annotations
@@ -8,8 +8,10 @@ from __future__ import annotations
 from agents.intake.fact_parse import (
     infer_damages,
     infer_incident_date,
+    infer_jurisdiction,
     infer_practice_area,
     is_iso_date,
+    is_valid_jurisdiction,
     parse_case_description,
 )
 
@@ -48,3 +50,19 @@ def test_infer_incident_date_rejects_garbage():
     assert infer_incident_date("last summer sometime") is None
     assert infer_incident_date("not-a-date") is None
     assert not is_iso_date("06/15/2024")
+
+
+def test_infer_jurisdiction_accepts_codes_and_names():
+    assert infer_jurisdiction("CA") == "CA"
+    assert infer_jurisdiction("california") == "CA"
+    assert infer_jurisdiction("crash in CA last month") == "CA"
+    assert infer_jurisdiction("accident in new york") == "NY"
+
+
+def test_infer_jurisdiction_rejects_non_states():
+    assert infer_jurisdiction("I don't know") is None
+    assert infer_jurisdiction("Personal Injury") is None
+    assert infer_jurisdiction("no") is None
+    assert infer_jurisdiction("skip") is None
+    assert not is_valid_jurisdiction("PE")
+    assert not is_valid_jurisdiction("no")
