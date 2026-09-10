@@ -10,19 +10,12 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from agents.intake.constants import FALLBACK_TOOL_ALIASES, FALLBACK_TOOL_NAME
 from tools.check_statute_of_limitations import (
     CheckSOLInput,
     check_statute_of_limitations,
 )
 from tools.conflict_check import ConflictCheckInput, conflict_check
 from tools.estimate_case_value import EstimateCaseValueInput, estimate_case_value
-from tools.kb_docs_fallback import (
-    KbDocsFallbackInput,
-    WebSearchFallbackInput,
-    kb_docs_fallback,
-    web_search_fallback,
-)
 from tools.route_lead import RouteLeadInput, route_lead
 
 # Functions Agno may invoke when tool_choice=auto.
@@ -31,7 +24,6 @@ TOOLS = [
     conflict_check,
     estimate_case_value,
     route_lead,
-    kb_docs_fallback,
 ]
 
 # Whitelist used when the LLM proposes tools during plan refine.
@@ -41,7 +33,6 @@ ALLOWED_TOOL_NAMES = frozenset(
         "conflict_check",
         "estimate_case_value",
         "route_lead",
-        *FALLBACK_TOOL_ALIASES,
     }
 )
 
@@ -130,17 +121,6 @@ def run_deterministic(
             )
             result.routing = parse_tool_payload(routing)
             _log(f"routing={result.routing.get('attorney_name')}")
-
-        # Broad KB lookup when practice area is unknown (aliases share one tool).
-        planned_fallback = FALLBACK_TOOL_ALIASES.intersection(plan.tools_to_call or [])
-        if planned_fallback:
-            fallback = kb_docs_fallback.entrypoint(
-                KbDocsFallbackInput(
-                    query=plan.retrieval_query or case_type or "intake guidance"
-                )
-            )
-            result.web_fallback = parse_tool_payload(fallback)
-            _log(f"{FALLBACK_TOOL_NAME} used")
     except Exception as exc:  # noqa: BLE001
         _log(f"error={exc}")
 
@@ -156,12 +136,8 @@ __all__ = [
     "EstimateCaseValueInput",
     "RouteLeadInput",
     "TOOLS",
-    "KbDocsFallbackInput",
-    "WebSearchFallbackInput",
     "check_statute_of_limitations",
     "conflict_check",
     "estimate_case_value",
     "route_lead",
-    "kb_docs_fallback",
-    "web_search_fallback",
 ]

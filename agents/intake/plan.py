@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from agents.intake.constants import (
     ESCALATE_MISSING_MIN,
-    FALLBACK_TOOL_NAME,
     PROMPTS,
 )
 from agents.intake.models import IntakeFacts, PlanResult
@@ -38,8 +37,8 @@ def build_plan(facts: IntakeFacts) -> PlanResult:
     practice_area = match_practice_area(case_type or "") if case_type else None
     tools: list[str] = []
     doc_types: list[str] = []
-    # Retrieve when we have a known practice area or free-text narrative to search on.
-    need_retrieval = bool(practice_area or facts.narrative)
+    # Retrieve when we have a practice area, case type, or free-text narrative.
+    need_retrieval = bool(practice_area or case_type or facts.narrative)
 
     # Tool selection: only schedule checks when the required inputs are present.
     if facts.jurisdiction and case_type and facts.incident_date:
@@ -54,9 +53,6 @@ def build_plan(facts: IntakeFacts) -> PlanResult:
         tools.append("route_lead")
         doc_types.append("acceptance_criteria")
     escalate = len(missing) >= ESCALATE_MISSING_MIN
-    # Unknown practice area → KB fallback search instead of specialized filters.
-    if not practice_area and case_type:
-        tools.append(FALLBACK_TOOL_NAME)
 
     # Retrieval query blends structured fields with a fixed legal-intake bias phrase.
     query_parts = [

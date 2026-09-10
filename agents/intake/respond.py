@@ -45,8 +45,6 @@ def tool_summary_lines(tools: ToolPhaseResult) -> list[str]:
         )
     if tools.routing:
         parts.append(f"Routing: {tools.routing.get('attorney_name') or 'unassigned'}.")
-    if tools.web_fallback:
-        parts.append("Fallback retrieval was used (Postgres kb_docs only).")
     return parts
 
 

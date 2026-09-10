@@ -9,7 +9,7 @@ Agentic RAG intake system for law firms. Prospective leads are screened for prac
 - Synthetic law-firm knowledge base (`kb/`) with multiple document types
 - ETL → PostgreSQL `kb_docs` via **pgvector** (HNSW) + JSONB payloads
 - Structured entities in PostgreSQL (`clients`, `attorneys`, `past_cases`)
-- Agno tools: SOL check, conflict check, case value, routing, fallback
+- Agno tools: SOL check, conflict check, case value, routing
 - Intake agent: plan → retrieve → **agentic tool selection** (`Agent.run`) → score → self-check → respond
 - Multi-turn **Interview** tab for prospective clients
 - Lead scoring engine with explicit decisions (`SCHEDULE_CONSULT` / `REVIEW` / `REJECT`)

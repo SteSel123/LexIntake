@@ -96,7 +96,7 @@ Properties:
 
 1. **Plan** — missing fields, tools, retrieval need, escalation flags (LLM can refine tool selection)  
 2. **Retrieve** — pgvector semantic search filtered by practice area / jurisdiction / doc type  
-3. **Tools** — SOL, conflict, estimate, route, optional fallback  
+3. **Tools** — SOL, conflict, estimate, route  
 4. **Decision / scoring** — viability + `score_lead()` decision object  
 5. **Self-check** — disclaimer, citations, unsafe language, confidence  
 6. **Respond** — LLM narrative with template fallback if a completion fails; always enforce guardrails
@@ -109,7 +109,6 @@ Properties:
 | `conflict_check` | Postgres `clients` | Conflict screening |
 | `estimate_case_value` | `past_cases` (+ vector fallback) | Settlement estimate |
 | `route_lead` | Postgres attorneys + caseload | Attorney assignment |
-| `web_search_fallback` | Local KB only | Marks when extra research would be needed |
 
 ## 8. Guardrails
 

@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Intake agent prompt catalog (loaded by agents.prompts.PromptSet).
+
+  - <text>/<list>/<map>: reusable strings (disclaimer, instructions, field questions)
+  - <prompt id="...">: templated user/system messages for plan refine, tools, write_message
+  Placeholders like $facts are filled at runtime via PROMPTS.user(...) / PROMPTS.text(...).
+-->
 <prompts agent="intake">
+  <!-- Static copy shown in every screening response -->
   <text id="legal_disclaimer">This is not legal advice. Consult a licensed attorney for legal guidance.</text>
   <text id="uncertainty_escalation">Information unclear — escalating to a human intake specialist.</text>
   <text id="screening_reminder">Reminder: This assistant explains intake screening information from firm knowledge sources only. It does not provide legal advice.</text>
@@ -34,7 +42,7 @@
     <user><![CDATA[You are planning an intake screening run.
 Fill the structured PlanRefineOutput schema.
 
-Allowed tools: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead, kb_docs_fallback
+Allowed tools: check_statute_of_limitations, conflict_check, estimate_case_value, route_lead
 Facts: $facts
 Draft plan: $plan
 Prefer calling tools when facts support them. Escalate when key facts are missing or ambiguous.]]></user>
@@ -70,7 +78,6 @@ Available tools:
 - conflict_check(name, opposing_party)
 - estimate_case_value(case_type, severity, damages)
 - route_lead(practice_area, priority)
-- kb_docs_fallback(query) only if KB seems insufficient
 
 Rules:
 - Call tools with concrete arguments from the facts.
