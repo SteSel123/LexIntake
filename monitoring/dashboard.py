@@ -1,13 +1,10 @@
-"""Simple Streamlit dashboard for LexIntake monitoring metrics."""
+"""Streamlit dashboard for LexIntake session metrics and Agno trace inspection.
+
+Reads the in-memory ``Metrics`` singleton populated by ``monitoring.logger`` events;
+demo seed data helps first-time viewers when no live intake has run yet.
+"""
 
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 try:
     import streamlit as st
@@ -23,6 +20,7 @@ except ImportError:  # pragma: no cover - script execution
 
 
 def _safe_hist(values: list[float] | list[int], bins: int = 10) -> tuple[list[str], list[int]]:
+    """Build histogram bucket labels/counts for Streamlit bar charts (handles empty input)."""
     if not values:
         return [str(i) for i in range(bins)], [0] * bins
     nums = [float(v) for v in values]
@@ -88,6 +86,7 @@ def _demo_seed() -> None:
 
 
 def render() -> None:
+    """Main dashboard layout: session stats, daily rollups, charts, Agno traces."""
     st.set_page_config(page_title="LexIntake Monitoring", layout="wide")
     st.title("LexIntake Observability")
     st.caption("In-memory metrics · no sensitive client/KB text · metadata only")
@@ -223,6 +222,7 @@ def render() -> None:
 
 
 def _day_fallback() -> str:
+    """UTC date string used when no session history exists yet."""
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")

@@ -1,31 +1,22 @@
-"""Run LexIntake end-to-end evaluation over synthetic leads."""
+"""Run LexIntake end-to-end evaluation over synthetic labeled leads.
+
+Loads ``leads.csv``, runs ``IntakeAgent`` per provider, scores guardrails and
+grounding, and prints an aggregate summary for capstone reporting.
+"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
+from evaluation.eval_logger import EvalLogger
+from evaluation.eval_metrics import EvalMetrics
+
 EVAL_DIR = Path(__file__).resolve().parent
-for path in (
-    str(ROOT),
-    str(EVAL_DIR),
-    str(ROOT / "agents"),
-    str(ROOT / "tools"),
-    str(ROOT / "db"),
-    str(ROOT / "scoring"),
-):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-from eval_logger import EvalLogger  # noqa: E402
-from eval_metrics import EvalMetrics  # noqa: E402
-
 LEADS_PATH = EVAL_DIR / "leads.csv"
 
 # Live provider comparison matrix (Task 6).
@@ -45,6 +36,7 @@ PRESCRIPTIVE_PATTERNS = [
 
 
 def parse_description(description: str) -> dict[str, str]:
+    """Parse semicolon-separated ``key=value`` fields from a lead description row."""
     parts: dict[str, str] = {}
     for chunk in description.split(";"):
         if "=" not in chunk:
@@ -55,17 +47,20 @@ def parse_description(description: str) -> dict[str, str]:
 
 
 def parse_bool(value: Any) -> bool:
+    """Coerce CSV truthy strings to bool for expected outcome columns."""
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
 
 
 def load_leads(path: Path) -> list[dict[str, Any]]:
+    """Load labeled evaluation leads from a CSV file."""
     with path.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         return list(reader)
 
 
 def build_intake_facts(fields: dict[str, str]):
-    from agents.intake_agent import IntakeFacts
+    """Map parsed CSV fields into ``IntakeFacts`` for agent execution."""
+    from agents.intake.models import IntakeFacts
 
     damages_raw = fields.get("damages", "0")
     try:
@@ -92,6 +87,7 @@ def build_intake_facts(fields: dict[str, str]):
 
 
 def acceptance_from_fields(fields: dict[str, str]) -> dict[str, Any]:
+    """Synthesize acceptance-criteria context from labeled signals in the CSV row."""
     signals = [s.strip() for s in (fields.get("signals") or "").split("|") if s.strip()]
     mode = (fields.get("acceptance") or "match").lower()
     if mode == "match":
@@ -149,6 +145,7 @@ def check_guardrails(
 
 
 def score_from_agent(response, fields: dict[str, str]) -> dict[str, Any]:
+    """Re-score agent output with ``score_lead`` for apples-to-apples eval metrics."""
     from scoring.lead_scoring import score_lead
 
     tools = response.tool_results or {}
@@ -202,6 +199,7 @@ def run_one_lead(
     agent,
     logger: EvalLogger,
 ) -> dict[str, Any]:
+    """Execute intake for one labeled lead and return a flat metrics dict."""
     fields = parse_description(lead["description"])
     facts = build_intake_facts(fields)
 
@@ -276,6 +274,7 @@ def run_one_lead(
 
 
 def print_summary(summary: dict[str, Any]) -> None:
+    """Pretty-print aggregate evaluation metrics to stdout."""
     print("\n===== LexIntake Evaluation Summary =====")
     print(f"Total leads evaluated: {summary['total_leads']}")
     print(f"Qualification accuracy: {summary['qualification_accuracy']:.2%}")
@@ -320,6 +319,7 @@ def parse_providers(raw: str) -> list[tuple[str, str]]:
 
 
 def main() -> None:
+    """CLI entry: parse args, run all leads across available providers, log summary."""
     parser = argparse.ArgumentParser(description="Run LexIntake evaluation suite")
     parser.add_argument("--leads", default=str(LEADS_PATH), help="Path to leads.csv")
     parser.add_argument(
@@ -351,7 +351,7 @@ def main() -> None:
         leads = leads[: args.limit]
     providers = parse_providers(args.providers)
 
-    from agents.intake_agent import IntakeAgent
+    from agents.intake.agent import IntakeAgent
     from agents.llm import provider_available
 
     logger = EvalLogger()
@@ -366,18 +366,10 @@ def main() -> None:
             print(f"SKIP {msg}")
             continue
         try:
-            if provider in {"local", "deterministic", "hash", "none"}:
-                agent = IntakeAgent(
-                    model=None,
-                    provider="local",
-                    model_id="deterministic",
-                    top_k=8,
-                )
-            else:
-                agent = IntakeAgent(provider=provider, model_id=model_id, top_k=8)
-                if not agent.llm_ready:
-                    print(f"SKIP {provider}/{model_id}: model failed to initialize")
-                    continue
+            agent = IntakeAgent(provider=provider, model_id=model_id, top_k=8)
+            if not agent.llm_ready:
+                print(f"SKIP {provider}/{model_id}: model failed to initialize")
+                continue
             ready.append((provider, model_id, agent))
             print(f"READY {provider}/{model_id}")
         except Exception as exc:  # noqa: BLE001
@@ -386,9 +378,10 @@ def main() -> None:
             print(f"SKIP {provider}/{model_id}: {exc}")
 
     if not ready:
-        # Deterministic fallback so local offline eval still works.
-        print("No live LLM providers available; running deterministic fallback agent.")
-        ready.append(("local", "deterministic", IntakeAgent(model=None, provider="local", model_id="deterministic")))
+        raise RuntimeError(
+            "No live LLM providers available. Set OPENAI_API_KEY (and optional "
+            "ANTHROPIC_API_KEY / GROQ_API_KEY) in .env."
+        )
 
     for idx, lead in enumerate(leads, start=1):
         lead_id = f"lead-{idx:03d}"
@@ -401,7 +394,7 @@ def main() -> None:
                 agent=agent,
                 logger=logger,
             )
-            # Primary metrics track first provider; all go into provider comparison.
+            # Primary metrics use the first ready provider; all rows feed comparison.
             if provider == ready[0][0]:
                 metrics.update(lead, result)
             metrics.add_provider_result(lead, result)

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Interview agent prompt catalog (multi-turn chat intake).
+
+  - welcome / closing / empty_reply: conversational shell text
+  - field_prompts: next question per missing IntakeFacts field
+  - extract_fields: structured LLM extraction of user replies into facts
+-->
+<prompts agent="interview">
+  <text id="welcome"><![CDATA[Welcome to LexIntake intake screening.
+
+I will ask a few questions so we can check practice-area fit, deadlines, conflicts, and routing. $legal_disclaimer
+
+$first_question]]></text>
+  <text id="questions_preface">Thanks — I still need a bit more information to screen this matter.</text>
+  <text id="empty_reply">Please share a short description or answer the last question.</text>
+  <text id="closing"><![CDATA[Intake interview complete. Here is the screening summary:
+
+$summary]]></text>
+  <text id="extract_system">Extract known intake fields into the structured schema. Use null for unknown. No legal advice.</text>
+
+  <map id="field_prompts">
+    <item key="name">What is your full name?</item>
+    <item key="practice_area">What type of legal matter is this (e.g., Personal Injury, Employment Law, Immigration)?</item>
+    <item key="jurisdiction">In which US state did this occur (e.g., CA, NV, NY)?</item>
+    <item key="incident_date">What is the incident or event date? Prefer YYYY-MM-DD (or use the date picker). You can also say 'X months ago' / 'X years ago', or common forms like 06/15/2024 or June 15, 2024.</item>
+    <item key="opposing_party">Who is the opposing or potentially at-fault party?</item>
+    <item key="damages">What are your estimated damages or losses in USD (number)?</item>
+  </map>
+
+  <prompt id="extract_fields">
+    <user><![CDATA[Extract intake fields from the user reply into ExtractedIntakeFields.
+Use null for unknown. Current facts: $facts
+User reply: $text]]></user>
+  </prompt>
+</prompts>

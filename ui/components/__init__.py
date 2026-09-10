@@ -1,1 +1,0 @@
-"""LexIntake UI components."""

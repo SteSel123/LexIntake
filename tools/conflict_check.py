@@ -1,4 +1,9 @@
-"""Agno tool: conflict check against structured clients table."""
+"""
+Agno tool: conflict check against structured clients table.
+
+Searches existing client records for name overlap with the prospective client
+or opposing party. Uses substring matching (not exact-only) to catch variants.
+"""
 
 from __future__ import annotations
 
@@ -7,15 +12,19 @@ from typing import Any
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import get_sqlite_connection, logger, tool_timer
+from tools.common import logger, query_structured, tool_timer
 
 
 class ConflictCheckInput(BaseModel):
+    """Prospective client and opposing party names to screen."""
+
     name: str = Field(..., description="Prospective client name")
     opposing_party: str = Field(..., description="Known opposing party name")
 
 
 class ConflictMatch(BaseModel):
+    """One client row that matched a screening target."""
+
     id: str
     name: str
     email: str | None = None
@@ -25,12 +34,15 @@ class ConflictMatch(BaseModel):
 
 
 class ConflictCheckOutput(BaseModel):
+    """Conflict screening result; conflict=True triggers hard reject in scoring."""
+
     conflict: bool
     details: list[ConflictMatch]
     explanation: str = ""
 
 
 def _normalize(value: str) -> str:
+    """Case-insensitive, whitespace-collapsed name for fuzzy equality checks."""
     return " ".join(value.casefold().split())
 
 
@@ -42,31 +54,22 @@ def _normalize(value: str) -> str:
     ),
 )
 def conflict_check(payload: ConflictCheckInput) -> ConflictCheckOutput:
-    """Case-insensitive conflict search over SQLite clients."""
+    """Case-insensitive conflict search over structured clients."""
     with tool_timer("conflict_check"):
         return _conflict_check_impl(payload)
 
 
 def _conflict_check_impl(payload: ConflictCheckInput) -> ConflictCheckOutput:
+    """Core conflict logic; wrapped by Agno tool for timing and error boundaries."""
     try:
-        conn = get_sqlite_connection()
-        if conn is None:
-            return ConflictCheckOutput(
-                conflict=False,
-                details=[],
-                explanation="Fallback: structured DB unavailable. Assume no conflict; verify manually.",
-            )
-
-        rows = conn.execute(
+        rows = query_structured(
             "SELECT id, name, email, phone, state FROM clients ORDER BY name"
-        ).fetchall()
-        conn.close()
-
+        )
         if not rows:
             return ConflictCheckOutput(
                 conflict=False,
                 details=[],
-                explanation="Clients table is empty. No conflicts found; database may not be seeded.",
+                explanation="Clients table is empty or unavailable. No conflicts found; verify manually if needed.",
             )
 
         targets = {
@@ -82,6 +85,7 @@ def _conflict_check_impl(payload: ConflictCheckInput) -> ConflictCheckOutput:
             for label, target in targets.items():
                 if not target:
                     continue
+                # Bidirectional substring match catches partial / reversed name forms.
                 if target == client_name or target in client_name or client_name in target:
                     matches.append(
                         ConflictMatch(

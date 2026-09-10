@@ -7,12 +7,11 @@ venv/
 .env
 .DS_Store
 
-# LanceDB local data directory
+# Legacy local DB leftovers (Postgres-only now)
 db/lancedb/
 *.lance
-
-# SQLite structured database file
 db/lexintake.db
+db/vector_store.json
 db/*.db-journal
 db/*.db-wal
 db/*.db-shm

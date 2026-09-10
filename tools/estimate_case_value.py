@@ -1,4 +1,10 @@
-"""Agno tool: estimate case value from past_cases (+ vector fallback)."""
+"""
+Agno tool: estimate case value from past_cases (+ vector fallback).
+
+Blends comparable settlement amounts from structured past_cases with stated
+damages and a severity multiplier. Falls back to kb_docs vector search when
+no structured comps exist for the practice area.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +13,9 @@ from statistics import mean
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from common import get_sqlite_connection, logger, match_practice_area, slugify, tool_timer, vector_search
+from tools.common import logger, match_practice_area, query_structured, slugify, tool_timer, vector_search
 
+# Multipliers applied to blended comp average based on claimed injury severity.
 SEVERITY_FACTORS = {
     "low": 0.75,
     "medium": 1.0,
@@ -18,12 +25,16 @@ SEVERITY_FACTORS = {
 
 
 class EstimateCaseValueInput(BaseModel):
+    """Case type, severity band, and stated damages for valuation."""
+
     case_type: str = Field(..., description="Practice area or case type")
     severity: str = Field(..., description="low | medium | high | catastrophic")
     damages: int = Field(..., ge=0, description="Claimed or estimated specials in USD")
 
 
 class EstimateCaseValueOutput(BaseModel):
+    """Point estimate and symmetric range for lead scoring case-value points."""
+
     estimate: float
     range_low: float
     range_high: float
@@ -31,25 +42,20 @@ class EstimateCaseValueOutput(BaseModel):
 
 
 def _severity_factor(severity: str) -> float:
+    """Map severity label to multiplier; unknown labels default to 1.0."""
     return SEVERITY_FACTORS.get(slugify(severity), 1.0)
 
 
-def _amounts_from_sqlite(practice_area: str) -> list[float]:
-    conn = get_sqlite_connection()
-    if conn is None:
-        return []
-    try:
-        rows = conn.execute(
-            """
-            SELECT settlement_amount, practice_area
-            FROM past_cases
-            WHERE settlement_amount IS NOT NULL AND settlement_amount > 0
-            ORDER BY id
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-
+def _amounts_from_db(practice_area: str) -> list[float]:
+    """Pull settlement amounts from past_cases for the matched practice area."""
+    rows = query_structured(
+        """
+        SELECT settlement_amount, practice_area
+        FROM past_cases
+        WHERE settlement_amount IS NOT NULL AND settlement_amount > 0
+        ORDER BY id
+        """
+    )
     target = slugify(practice_area)
     amounts = [
         float(row["settlement_amount"])
@@ -60,6 +66,7 @@ def _amounts_from_sqlite(practice_area: str) -> list[float]:
 
 
 def _amounts_from_vector(case_type: str, practice_area: str | None) -> list[float]:
+    """Extract dollar-like tokens from kb_docs hits when structured comps are absent."""
     hits = vector_search(
         query=f"{case_type} settlement award comparable cases",
         top_k=8,
@@ -78,9 +85,10 @@ def _amounts_from_vector(case_type: str, practice_area: str | None) -> list[floa
 
 
 def _build_estimate(amounts: list[float], damages: int, severity: str) -> tuple[float, float, float]:
+    """Compute point estimate and range from comps, damages blend, and severity."""
     factor = _severity_factor(severity)
     base = mean(amounts)
-    # Blend comps with stated damages (deterministic weights)
+    # 70/30 blend weights comps higher than caller-stated damages for stability.
     blended = (0.7 * base) + (0.3 * float(damages))
     estimate = round(blended * factor, 2)
     spread = 0.25 if len(amounts) >= 2 else 0.35
@@ -103,11 +111,13 @@ def estimate_case_value(payload: EstimateCaseValueInput) -> EstimateCaseValueOut
 
 
 def _estimate_case_value_impl(payload: EstimateCaseValueInput) -> EstimateCaseValueOutput:
+    """Core valuation logic; wrapped by Agno tool for timing and error boundaries."""
     try:
         practice_area = match_practice_area(payload.case_type) or payload.case_type
-        amounts = _amounts_from_sqlite(practice_area)
+        amounts = _amounts_from_db(practice_area)
         source = "past_cases"
 
+        # Structured comps preferred; vector KB is secondary evidence source.
         if not amounts:
             amounts = _amounts_from_vector(payload.case_type, practice_area)
             source = "vector_fallback"

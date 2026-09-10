@@ -1,18 +1,20 @@
-"""CLI entrypoint: initialize LexIntake structured SQLite database."""
+"""CLI: initialize LexIntake PostgreSQL schema and seed from kb/.
+
+Run after setting ``DATABASE_URL`` to apply Alembic migrations and optionally
+load structured reference data from the ``kb/`` JSON fixtures.
+"""
 
 from __future__ import annotations
 
 import argparse
 
-from sqlite_db import init_db
+from db.structured_db import init_db
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Initialize LexIntake structured SQLite DB")
-    parser.add_argument(
-        "--db-path",
-        default=None,
-        help="Optional path to sqlite file (default: db/lexintake.db)",
+    """Parse flags and invoke ``init_db`` with optional seeding."""
+    parser = argparse.ArgumentParser(
+        description="Initialize LexIntake PostgreSQL DB (requires DATABASE_URL)"
     )
     parser.add_argument(
         "--no-seed",
@@ -20,8 +22,9 @@ def main() -> None:
         help="Create tables only; do not seed from kb/",
     )
     args = parser.parse_args()
-    result = init_db(db_path=args.db_path, seed=not args.no_seed)
-    print(f"SQLite ready at {result['db_path']}")
+    result = init_db(seed=not args.no_seed)
+    print("PostgreSQL ready")
+    print(f"url={result['database_url']}")
     print(f"seeded={result['seeded']}")
     print(f"counts={result['counts']}")
 

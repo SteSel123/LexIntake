@@ -1,3 +1,4 @@
+# LexIntake CI: unit tests + live smoke (Postgres init, ETL, demo, eval) on PRs to main.
 name: CI
 
 on:
@@ -5,29 +6,36 @@ on:
     branches:
       - main
 
-# Optional nightly full evaluation (disabled by default)
-# on:
-#   pull_request:
-#     branches: [main]
-#   schedule:
-#     - cron: "0 3 * * *"
-
 jobs:
   smoke-test:
     name: smoke-test
     runs-on: ubuntu-latest
 
-    # Fully offline / deterministic — no external LLM or embedding APIs
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: lexintake
+          POSTGRES_PASSWORD: lexintake
+          POSTGRES_DB: lexintake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lexintake -d lexintake"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
-      LEXINTAKE_EMBEDDING_PROVIDER: hash
-      LEXINTAKE_EMBEDDING_MODEL: hash-v1
-      LEXINTAKE_EMBEDDING_DIMS: "256"
-      LEXINTAKE_LLM_PROVIDER: local
-      LEXINTAKE_LLM_MODEL: deterministic
-      LEXINTAKE_AGNO_TRACING: "0"
-      OPENAI_API_KEY: ""
-      ANTHROPIC_API_KEY: ""
-      GROQ_API_KEY: ""
+      PYTHONPATH: .
+      LEXINTAKE_EMBEDDING_PROVIDER: openai
+      LEXINTAKE_EMBEDDING_MODEL: text-embedding-3-small
+      LEXINTAKE_EMBEDDING_DIMS: "1536"
+      LEXINTAKE_LLM_PROVIDER: openai
+      LEXINTAKE_LLM_MODEL: gpt-4.1
+      LEXINTAKE_AGNO_TRACING: "1"
+      DATABASE_URL: postgresql://lexintake:lexintake@localhost:5432/lexintake
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -43,35 +51,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Optional: Ruff linting (commented out)
-      # - name: Install Ruff
-      #   run: pip install ruff
-      # - name: Ruff check
-      #   run: ruff check .
+      - name: Require OpenAI API key
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "Repository secret OPENAI_API_KEY is required for CI." >&2
+            exit 1
+          fi
 
-      # Optional: unit tests (commented out)
-      # - name: Run unit tests
-      #   run: pytest -q
+      - name: Initialize PostgreSQL schema + seed
+        run: python -m db.init_structured_db
 
-      - name: Initialize structured DB
-        run: python db/init_structured_db.py
+      - name: Load KB documents into pgvector
+        run: python -m etl.pipeline
 
-      - name: Load KB documents (hash embeddings)
-        run: python db/load_kb_docs.py
+      - name: Run unit tests
+        run: pytest tests/ -q
 
       - name: Run demo scenarios
-        run: python ui/demo.py
+        run: python frontend/demo.py
 
-      - name: Run limited evaluation (deterministic)
+      - name: Run limited evaluation
         run: >
           python evaluation/run_evaluation.py
-          --providers local:deterministic
+          --providers openai:gpt-4.1
           --limit 5
-
-      # Optional nightly full evaluation (commented out; enable with schedule trigger above)
-      # - name: Nightly full evaluation
-      #   if: github.event_name == 'schedule'
-      #   run: python evaluation/run_evaluation.py --providers local:deterministic --limit 999
+          --require-all
 
       - name: Upload CI logs
         if: always()

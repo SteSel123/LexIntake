@@ -1,5 +1,17 @@
-"""LexIntake lead scoring package."""
+"""
+LexIntake lead scoring package.
 
-from .lead_scoring import LeadScoreOutput, LeadScoreContext, score_lead
+Public surface for deterministic intake scoring: build context from pipeline
+artifacts, compute a 0–100 lead score, and apply narrative-uncertainty overrides.
+"""
 
-__all__ = ["LeadScoreContext", "LeadScoreOutput", "score_lead"]
+from .domain import apply_uncertain_narrative_override, is_uncertain_narrative
+from .lead_scoring import LeadScoreContext, LeadScoreOutput, score_lead
+
+__all__ = [
+    "LeadScoreContext",
+    "LeadScoreOutput",
+    "apply_uncertain_narrative_override",
+    "is_uncertain_narrative",
+    "score_lead",
+]

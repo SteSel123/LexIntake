@@ -1,4 +1,8 @@
-"""In-memory metrics collector for LexIntake monitoring."""
+"""In-memory metrics collector for LexIntake monitoring.
+
+Aggregates tokens, cost, latency, tool usage, retrieval quality, and lead outcomes
+from structured log events. Thread-safe for concurrent intake requests in one process.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ def _day_key(ts: datetime | None = None) -> str:
 
 @dataclass
 class Metrics:
+    """Rolling counters and samples for one process-wide monitoring session."""
+
     tokens_used: int = 0
     total_cost: float = 0.0
     latencies: dict[str, list[float]] = field(default_factory=dict)
@@ -174,6 +180,7 @@ _hook_installed = False
 
 
 def get_metrics() -> Metrics:
+    """Return the global Metrics instance, wiring the logger hook on first call."""
     global _hook_installed
     if not _hook_installed:
         try:
@@ -181,6 +188,7 @@ def get_metrics() -> Metrics:
         except ImportError:  # pragma: no cover
             from .logger import set_metrics_hook
 
+        # Bridge structured log events into the in-memory Metrics counters.
         def _hook(event_type: str, payload: dict[str, Any]) -> None:
             data = payload.get("data") or {}
             sid = payload.get("session_id")
