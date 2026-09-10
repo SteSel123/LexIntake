@@ -1,4 +1,8 @@
-"""Generate LexIntake comprehensive Dutch learning PDF (40+ pages)."""
+"""Generate the LexIntake comprehensive Dutch learning PDF (40+ pages).
+
+Builds ``docs/LexIntake_Leerboek.pdf`` with chapter diagrams, repo maps, and
+worked examples for capstone study. Requires fpdf2 and system Arial fonts.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,8 @@ FONT_ITALIC = "C:/Windows/Fonts/ariali.ttf"
 
 
 class Leerboek(FPDF):
+    """FPDF subclass with LexIntake branding and reusable diagram helpers."""
+
     def __init__(self) -> None:
         super().__init__(format="A4", unit="mm")
         self.set_auto_page_break(auto=True, margin=18)
@@ -700,6 +706,7 @@ class Leerboek(FPDF):
 
 
 def build() -> Path:
+    """Assemble all chapters and write ``LexIntake_Leerboek.pdf``; return output path."""
     pdf = Leerboek()
     pdf.cover()
 
@@ -868,7 +875,7 @@ def build() -> Path:
             "ETL: extract → clean → dedupe → chunk → metadata → embeddings → load",
             "ETL-eigenschappen: re-runnable, idempotent, incremental",
             "Agent-loop: Plan → Retrieve → Tool Call → Decision → Self-check",
-            "Tools: SOL, conflict, estimate_case_value, route_lead (+ optionele fallback)",
+            "Tools: SOL, conflict, estimate_case_value, route_lead",
             "Lead output: qualified, lead_score, priority, decision, recommended_attorney",
             "Guardrails in elk antwoord",
             "Observability (tokens, cost, latency, tools, retrieval, escalaties, case value)",
@@ -993,7 +1000,7 @@ def build() -> Path:
         ("etl/", "Pipeline: extract → clean → dedupe → chunk → metadata → embed → load."),
         ("db/", "PostgreSQL: SQLAlchemy models, pgvector store, Alembic migrations, seed scripts."),
         ("agents/", "IntakeAgent (plan/retrieve/tools/decide), InterviewAgent, LLM wiring."),
-        ("tools/", "Agno @tool functies: SOL, conflict, value, route, web fallback."),
+        ("tools/", "Agno @tool functies: SOL, conflict, value, route."),
         ("scoring/", "score_lead(), context builder, named constants (single source of truth)."),
         ("tests/", "Pytest: scoring, guardrails, fact_parse, conflict_check (geen API key)."),
         ("backend/", "FastAPI REST API (intake analyze, interview sessions, health)."),
@@ -1051,7 +1058,7 @@ def build() -> Path:
         ["scoring/constants.py", "Named thresholds (SCORE_SCHEDULE_MIN, etc.)"],
         ["agents/intake/guardrails.py", "Disclaimer, citaties, escalatie checks"],
         ["agents/intake/models.py", "Pydantic: IntakeFacts, PlanResult, Response"],
-        ["agents/intake/tools.py", "Tool-aanroep wiring (agentic + fallback)"],
+        ["agents/intake/tools.py", "Tool-aanroep wiring (agentic + deterministic)"],
         ["agents/intake/prompts.xml", "Systeem-instructies voor de agent"],
         ["agents/interview/agent.py", "InterviewSession: multi-turn Q&A → screening"],
         ["agents/llm.py", "build_model(): OpenAI/Anthropic/Groq provider switch"],
@@ -1060,7 +1067,6 @@ def build() -> Path:
         ["tools/conflict_check.py", "Zoekt client match in Postgres clients"],
         ["tools/estimate_case_value.py", "Case value schatting via past_cases comps"],
         ["tools/route_lead.py", "Attorney routing op specialisatie/availability"],
-        ["tools/web_search_fallback.py", "Lokale fallback als KB tekortschiet"],
         ["tools/common.py", "Gedeelde helpers (practice area match, vector_search)"],
         ["scoring/lead_scoring.py", "score_lead(): qualified, score, decision"],
         ["backend/api/main.py", "FastAPI app entrypoint + CORS"],
@@ -1330,10 +1336,6 @@ def build() -> Path:
             "route_lead",
             "Input: practice_area, priority. Kiest attorney op specialisatie/load. "
             "Output: attorney_name + rationale.",
-        ),
-        (
-            "web_search_fallback (optioneel)",
-            "Lokale fallback wanneer KB tekort lijkt; in dit project geen live web.",
         ),
     ]
     for t, b in tools:
@@ -2057,8 +2059,7 @@ def build() -> Path:
         "Dit document is uitsluitend bedoeld om de capstone-opdracht te leren.",
     )
 
-    # If still short, add compact FAQ pages with real Q&A (not empty sheets)
-    # Pad to >= 40 pages with unique FAQ depth (no empty worksheets)
+    # Pad to >= 40 pages with unique FAQ depth when chapter content runs short.
     extra_topics = [
         (
             "Waarom Agno?",
