@@ -18,7 +18,6 @@ from agno.agent import Agent
 
 from agents.intake.constants import (
     DEFAULT_CONFIDENCE_THRESHOLD,
-    FALLBACK_TOOL_ALIASES,
     INTAKE_INSTRUCTIONS,
     LEGAL_DISCLAIMER,
     PROMPTS,
@@ -48,7 +47,7 @@ from agents.intake.tools import (
     parse_tool_payload,
     run_deterministic,
 )
-from agents.llm import complete, complete_structured, estimate_cost
+from agents.llm import complete_structured, usage_from_run
 from agents.shared import enable_tracing, prepare_agent_kwargs, resolve_model
 from monitoring.app_logging import get_console_logger, log_optional_failure
 from tools.common import attorney_key, match_practice_area
@@ -96,11 +95,9 @@ class IntakeAgent(Agent):
         self.confidence_threshold = confidence_threshold
         # How many KB chunks to keep after vector search (clamped to allowed range).
         self.top_k = max(TOP_K_MIN, min(TOP_K_MAX, int(top_k)))
-        # Human-readable step log for debugging one intake run.
-        self._reasoning_log: list[str] = []
         self.provider = (provider or LLM_PROVIDER or "openai").lower()
         self.model_id = model_id or LLM_MODEL
-        # Cumulative token + $ cost for the current run (reset in run_intake).
+        # Session totals summed from Agno run.metrics (OTEL); reset in run_intake.
         self._token_usage = {"input": 0, "output": 0, "total": 0}
         self._llm_cost = 0.0
 
@@ -122,24 +119,18 @@ class IntakeAgent(Agent):
         """True when a usable chat model was resolved (structured LLM steps can run)."""
         return self.model is not None
 
-    def _record_usage(self, input_tokens: int, output_tokens: int, total_tokens: int | None = None) -> None:
-        """Accumulate token counts and estimated USD cost for this intake session."""
+    def _accumulate_agno_usage(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int | None = None,
+        cost: float = 0.0,
+    ) -> None:
+        """Sum Agno/OTEL run metrics across intake LLM calls into session totals."""
         self._token_usage["input"] += input_tokens
         self._token_usage["output"] += output_tokens
         self._token_usage["total"] += total_tokens if total_tokens is not None else (input_tokens + output_tokens)
-        self._llm_cost += estimate_cost(self.provider, input_tokens, output_tokens)
-
-    def _complete(self, prompt: str, *, system: str | None = None) -> str:
-        """Free-text LLM completion; returns '' on failure or when no model is configured."""
-        if not self.model:
-            return ""
-        try:
-            result = complete(self.model, prompt, system=system)
-            self._record_usage(result.input_tokens, result.output_tokens, result.total_tokens)
-            return result.content
-        except _LLM_FAILURES as exc:
-            self._log("llm", f"completion failed: {type(exc).__name__}: {exc}")
-            return ""
+        self._llm_cost += float(cost or 0.0)
 
     def complete_structured(
         self,
@@ -165,20 +156,17 @@ class IntakeAgent(Agent):
                 system=system,
                 name=name,
             )
-            self._record_usage(result.input_tokens, result.output_tokens, result.total_tokens)
+            self._accumulate_agno_usage(
+                result.input_tokens, result.output_tokens, result.total_tokens, result.cost
+            )
             return result.parsed
         except _LLM_FAILURES as exc:
             self._log("llm", f"structured completion failed: {type(exc).__name__}: {exc}")
             return None
 
-    # Backward-compatible private alias (older call sites / tests).
-    _complete_structured = complete_structured
-
     def _log(self, step: str, detail: str) -> None:
-        """Append a phase log line and emit it to the intake console logger."""
-        entry = f"[{step}] {detail}"
-        self._reasoning_log.append(entry)
-        logger.info(entry)
+        """Emit a phase log line to the intake console logger."""
+        logger.info("[%s] %s", step, detail)
 
     # ------------------------------------------------------------------
     # Phase helpers that optionally call the LLM
@@ -275,7 +263,7 @@ class IntakeAgent(Agent):
 
     def use_tools(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
         """
-        Run intake tools (SOL, conflict, estimate, routing, KB fallback).
+        Run intake tools (SOL, conflict, estimate, routing).
 
         Prefers Agno Agent.run (LLM picks/calls tools) when a model is ready;
         otherwise (or on failure) runs the planned tools deterministically.
@@ -285,7 +273,7 @@ class IntakeAgent(Agent):
                 agentic = self._use_tools_agentic(facts, plan)
                 # Only accept agentic output if at least one tool produced a payload.
                 if agentic and any(
-                    [agentic.sol, agentic.conflict, agentic.estimate, agentic.routing, agentic.web_fallback]
+                    [agentic.sol, agentic.conflict, agentic.estimate, agentic.routing]
                 ):
                     self._log("tools", "agentic Agent.run tool_choice=auto")
                     return agentic
@@ -331,8 +319,6 @@ class IntakeAgent(Agent):
                 result.estimate = payload
             elif "route" in name:
                 result.routing = payload
-            elif name in FALLBACK_TOOL_ALIASES or "fallback" in name or "kb_docs" in name:
-                result.web_fallback = payload
 
         # Planned tools: deterministic path is the audit source of truth.
         # Agentic results only fill gaps (avoids incomplete LLM tool rows wiping SOL/estimate).
@@ -341,13 +327,9 @@ class IntakeAgent(Agent):
         result.conflict = det.conflict or result.conflict
         result.estimate = det.estimate or result.estimate
         result.routing = det.routing or result.routing
-        result.web_fallback = result.web_fallback or det.web_fallback
 
-        metrics = getattr(run_out, "metrics", None)
-        if metrics is not None:
-            in_tok = int(getattr(metrics, "input_tokens", 0) or 0)
-            out_tok = int(getattr(metrics, "output_tokens", 0) or 0)
-            self._record_usage(in_tok, out_tok)
+        in_tok, out_tok, total, cost = usage_from_run(run_out)
+        self._accumulate_agno_usage(in_tok, out_tok, total, cost)
         return result
 
     def decide(
@@ -461,7 +443,6 @@ class IntakeAgent(Agent):
           6. draft message without LLM → self_check → final respond (LLM if available)
           7. Attach latency, tokens, cost; log escalation if needed
         """
-        self._reasoning_log.clear()
         self._token_usage = {"input": 0, "output": 0, "total": 0}
         self._llm_cost = 0.0
         started = time.perf_counter()
