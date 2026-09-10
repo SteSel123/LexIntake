@@ -1295,11 +1295,16 @@ def build() -> Path:
     pdf.bullet(
         [
             "GET /health — health check",
-            "POST /v1/intake/analyze — quick analysis",
-            "POST /v1/interview/start — start interview sessie",
-            "POST /v1/interview/{id}/message — antwoord sturen",
-            "POST /v1/interview/{id}/screen — forceer screening",
+            "GET / — service discovery (docs + route hints)",
+            "POST /v1/intake/analyze — quick analysis (één casebeschrijving)",
+            "POST /v1/interview/sessions — start interview sessie",
+            "POST /v1/interview/sessions/{id}/turns — antwoord sturen",
+            "DELETE /v1/interview/sessions/{id} — sessie opruimen",
         ]
+    )
+    pdf.p(
+        "Backend API-tests staan in tests/test_backend_api.py (FastAPI TestClient, "
+        "pipeline gemockt zodat CI geen live LLM nodig heeft voor HTTP-coverage)."
     )
     pdf.h2("Makefile")
     pdf.code(
@@ -1377,21 +1382,35 @@ def build() -> Path:
     pdf.h1("Multi-turn interview met prospects")
     pdf.p(
         "De PDF vraagt om ‘Interview prospective clients’. Daarom bestaat er een "
-        "InterviewSession (agents/interview/agent.py) en een UI-tab ‘Interview (multi-turn)’."
+        "InterviewSession (agents/interview/agent.py), een Streamlit-tab, en een "
+        "statische web-UI op Vercel (web/) die dezelfde FastAPI-routes gebruikt."
     )
     pdf.h2("Hoe werkt het?")
     pdf.bullet(
         [
             "Agent start met welkom + disclaimer + eerste vraag",
-            "Gebruiker antwoordt in chat",
+            "Gebruiker antwoordt in chat (web-UI toont een date picker bij datumvragen)",
             "Sessie vult IntakeFacts (heuristiek + optioneel LLM-extractie)",
             "Zolang verplichte velden missen: nieuwe vragen",
-            "Als genoeg info (of ‘screen now’): run_intake() screening",
+            "Ongeldige antwoorden (geen echte US-staat, geen parsebare datum) worden "
+            "niet opgeslagen → agent blijft doorvragen",
+            "Als genoeg info (of ‘screen now’ mét practice area + geldige staat): "
+            "run_intake() screening",
             "Eindigt met samenvatting + guardrails + citaties",
         ]
     )
     pdf.h2("Verplichte velden")
     pdf.p("name, practice_area, jurisdiction, incident_date, opposing_party, damages")
+    pdf.h2("Datum & jurisdiction")
+    pdf.bullet(
+        [
+            "incident_date: ISO YYYY-MM-DD, ‘X months/years ago’, 06/15/2024, "
+            "June 15 2024 — genormaliseerd via infer_incident_date(); anders None",
+            "jurisdiction: alleen echte US-state codes/namen (CA, California, …); "
+            "geen cleaned[:2]-gok meer (bugfix: ‘Personal Injury’ werd ‘PE’)",
+            "SOL-tool draait alleen bij valide ISO-datum; anders skip + log",
+        ]
+    )
     pdf.h2("Quick analysis blijft bestaan")
     pdf.p(
         "Voor demoscenario’s en evaluatie is single-pass (plak tekst → analyse) handig. "
@@ -1496,13 +1515,16 @@ def build() -> Path:
             "dashboard.py — Streamlit grafieken",
         ]
     )
-    pdf.h2("2) Agno native tracing")
+    pdf.h2("2) Agno native tracing (OpenTelemetry)")
     pdf.bullet(
         [
             "monitoring/agno_tracing.py roept setup_tracing() aan",
             "Traces landen in monitoring/traces.db",
+            "Per-call tokens/cost komen uit Agno run.metrics (geen custom "
+            "estimate_cost / len(prompt)//4 meer)",
+            "IntakeAgent sommeert die Agno-metrics over de sessie voor IntakeResponse",
             "Zichtbaar in dashboard sectie ‘Agno Monitoring’",
-            "Uit te zetten met LEXINTAKE_AGNO_TRACING=0 (CI doet dit)",
+            "Uit te zetten met LEXINTAKE_AGNO_TRACING=0",
         ]
     )
     pdf.code("python -m streamlit run monitoring/dashboard.py")
@@ -1552,16 +1574,26 @@ def build() -> Path:
             "frontend/components/ — header, disclaimer, result_viewer, footer",
             "frontend/demo.py — CLI demo met 4 scenario's",
             "frontend/runner.py — gedeelde pipeline runner",
+            "web/ — statische Vercel-UI (date picker bij incident_date; praat met Render API)",
             "Tab Interview — multi-turn gesprek via agents/interview/",
             "Tab Quick analysis — plak case description → run_intake",
             "Sidebar met demoscenario’s",
             "Result viewer: score, decision, citaties, guardrails, tool JSON",
         ]
     )
+    pdf.h2("Deploy-URLs (typisch)")
+    pdf.bullet(
+        [
+            "API (Render): https://lexintake-api.onrender.com",
+            "Frontend preview (Vercel develop): https://lexintake-git-develop-app-assist.vercel.app",
+            "Postgres (Render): aparte managed DB lexintake-db via DATABASE_URL",
+        ]
+    )
     pdf.h2("API alternatief (backend/)")
     pdf.p(
-        "Dezelfde intake-logica via FastAPI op http://localhost:8000/docs. "
-        "Handig voor integraties of als je UI en backend wilt scheiden."
+        "Dezelfde intake-logica via FastAPI op http://localhost:8000/docs "
+        "(of de Render-URL). Handig voor integraties of als je UI en backend wilt scheiden. "
+        "HTTP-coverage: tests/test_backend_api.py."
     )
     pdf.h2("CLI demo (4 scenario’s)")
     pdf.code("make demo   # of: python frontend/demo.py")
@@ -1742,8 +1774,9 @@ def build() -> Path:
     )
     pdf.h2("Oefening D — Interview")
     pdf.p(
-        "Doe een interview in de UI waarbij je expres jurisdiction weglaat. "
-        "Controleer dat de agent doorvraagt."
+        "Doe een interview in de UI waarbij je expres jurisdiction weglaat of "
+        "‘I don’t know’ typt. Controleer dat de agent doorvraagt (geen nep-state zoals PE). "
+        "Test ook een datum als ‘June 15, 2024’ of de date picker."
     )
     pdf.h2("Oefening E — Eval")
     pdf.p(
