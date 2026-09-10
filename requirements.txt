@@ -14,3 +14,4 @@ opentelemetry-sdk>=1.20.0
 openinference-instrumentation-agno>=0.1.0
 # Requires PostgreSQL with pgvector + pg_trgm (see docker-compose.yml).
 pytest>=8.0.0
+httpx>=0.27.0
