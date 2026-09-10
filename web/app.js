@@ -19,6 +19,8 @@
     chat: document.getElementById("chat"),
     chatForm: document.getElementById("chat-form"),
     chatInput: document.getElementById("chat-input"),
+    chatDate: document.getElementById("chat-date"),
+    chatInputMode: document.getElementById("chat-input-mode"),
     restart: document.getElementById("restart-interview"),
     interviewResult: document.getElementById("interview-result"),
     caseDescription: document.getElementById("case-description"),
@@ -31,6 +33,7 @@
 
   let sessionId = null;
   let interviewDone = false;
+  let inputMode = "text"; // "text" | "date"
 
   function showApiError(message) {
     els.apiStatus.hidden = false;
@@ -73,6 +76,41 @@
     div.textContent = content;
     els.chat.appendChild(div);
     els.chat.scrollTop = els.chat.scrollHeight;
+  }
+
+  function wantsDateInput(data) {
+    const missing = data.missing_fields || [];
+    const msg = String(data.assistant_message || "").toLowerCase();
+    return (
+      missing.includes("incident_date") &&
+      /incident|event date|yyyy-mm-dd|date picker|date/.test(msg)
+    );
+  }
+
+  function setInputMode(mode) {
+    inputMode = mode === "date" ? "date" : "text";
+    const useDate = inputMode === "date";
+    els.chatInput.hidden = useDate;
+    els.chatInput.required = !useDate;
+    els.chatDate.hidden = !useDate;
+    els.chatDate.required = useDate;
+    els.chatInputMode.hidden = !useDate;
+    els.chatInputMode.textContent = "Type relative date instead";
+    if (useDate) {
+      els.chatDate.focus();
+    } else {
+      els.chatInput.placeholder =
+        "Answer the agent’s question or describe your matter…";
+      els.chatInput.focus();
+    }
+  }
+
+  function syncComposer(data) {
+    if (interviewDone) {
+      setInputMode("text");
+      return;
+    }
+    setInputMode(wantsDateInput(data) ? "date" : "text");
   }
 
   function renderResult(container, payload) {
@@ -124,17 +162,21 @@
     interviewDone = false;
     sessionId = null;
     els.chatInput.disabled = true;
+    els.chatDate.disabled = true;
+    setInputMode("text");
     try {
       clearApiError();
       const data = await api("/v1/interview/sessions", { method: "POST", body: "{}" });
       sessionId = data.session_id;
       appendBubble("assistant", data.assistant_message);
       interviewDone = Boolean(data.done);
+      syncComposer(data);
     } catch (err) {
       showApiError(String(err.message || err));
       appendBubble("assistant", `Could not start interview: ${err.message || err}`);
     } finally {
       els.chatInput.disabled = interviewDone;
+      els.chatDate.disabled = interviewDone;
     }
   }
 
@@ -154,14 +196,25 @@
     startInterview();
   });
 
+  els.chatInputMode.addEventListener("click", () => {
+    setInputMode("text");
+    els.chatInput.placeholder = "e.g. 6 months ago, June 15 2024, or 06/15/2024";
+    els.chatInputMode.hidden = true;
+  });
+
   els.chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!sessionId || interviewDone) return;
-    const message = els.chatInput.value.trim();
+    const message =
+      inputMode === "date"
+        ? (els.chatDate.value || "").trim()
+        : els.chatInput.value.trim();
     if (!message) return;
     els.chatInput.value = "";
+    els.chatDate.value = "";
     appendBubble("user", message);
     els.chatInput.disabled = true;
+    els.chatDate.disabled = true;
     try {
       const data = await api(`/v1/interview/sessions/${sessionId}/turns`, {
         method: "POST",
@@ -172,10 +225,12 @@
         interviewDone = true;
         if (data.screening) renderResult(els.interviewResult, data.screening);
       }
+      syncComposer(data);
     } catch (err) {
       appendBubble("assistant", `Error: ${err.message || err}`);
     } finally {
       els.chatInput.disabled = interviewDone;
+      els.chatDate.disabled = interviewDone;
     }
   });
 

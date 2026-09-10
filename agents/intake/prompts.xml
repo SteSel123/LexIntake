@@ -33,7 +33,7 @@
     <item key="name">What is your full name?</item>
     <item key="practice_area">What type of legal matter is this (practice area)?</item>
     <item key="jurisdiction">In which US state did this occur (e.g., CA, NV)?</item>
-    <item key="incident_date">What is the incident or event date (YYYY-MM-DD)?</item>
+    <item key="incident_date">What is the incident or event date (YYYY-MM-DD, 'X months ago', or e.g. June 15, 2024)?</item>
     <item key="opposing_party">Who is the opposing party or potentially at-fault party?</item>
     <item key="damages">What are your estimated damages or losses in USD (number)?</item>
   </map>

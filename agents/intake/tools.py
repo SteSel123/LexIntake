@@ -76,17 +76,27 @@ def run_deterministic(
             log(detail)
 
     try:
-        # Statute of limitations — needs jurisdiction, case type, and incident date.
+        # Statute of limitations — needs jurisdiction, case type, and a valid ISO date.
         if "check_statute_of_limitations" in plan.tools_to_call and facts.incident_date:
-            sol = check_statute_of_limitations.entrypoint(
-                CheckSOLInput(
-                    jurisdiction=facts.jurisdiction or "",
-                    case_type=case_type,
-                    incident_date=facts.incident_date,
-                )
+            from agents.intake.fact_parse import infer_incident_date, is_iso_date
+
+            iso_date = (
+                facts.incident_date
+                if is_iso_date(facts.incident_date)
+                else infer_incident_date(facts.incident_date)
             )
-            result.sol = parse_tool_payload(sol)
-            _log(f"SOL={result.sol}")
+            if not iso_date:
+                _log(f"SOL skipped: invalid incident_date={facts.incident_date!r}")
+            else:
+                sol = check_statute_of_limitations.entrypoint(
+                    CheckSOLInput(
+                        jurisdiction=facts.jurisdiction or "",
+                        case_type=case_type,
+                        incident_date=iso_date,
+                    )
+                )
+                result.sol = parse_tool_payload(sol)
+                _log(f"SOL={result.sol}")
 
         # Conflict of interest — client name vs opposing party.
         if "conflict_check" in plan.tools_to_call and facts.name:

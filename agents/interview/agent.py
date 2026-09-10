@@ -126,15 +126,12 @@ class InterviewSession:
             m = re.search(r"\b([A-Za-z]{2})\b", cleaned)
             self.facts.jurisdiction = (m.group(1) if m else cleaned[:2]).upper()
         elif "incident" in last_q or "event date" in last_q:
-            iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", cleaned)
-            if iso:
-                self.facts.incident_date = iso.group(1)
-            else:
-                # Allow relative phrases; fact_parse will normalize when possible
-                from agents.intake.fact_parse import infer_incident_date
+            from agents.intake.fact_parse import infer_incident_date
 
-                inferred = infer_incident_date(cleaned)
-                self.facts.incident_date = inferred or cleaned[:32]
+            inferred = infer_incident_date(cleaned)
+            # Only store normalized ISO dates; leave unset so the interview re-asks.
+            if inferred:
+                self.facts.incident_date = inferred
         elif "damages" in last_q or "losses" in last_q:
             digits = re.sub(r"[^\d.]", "", cleaned.replace(",", ""))
             if digits:
@@ -196,6 +193,8 @@ class InterviewSession:
         )
         if not isinstance(extracted, ExtractedIntakeFields):
             return
+        from agents.intake.fact_parse import infer_incident_date
+
         for key in (
             "name",
             "opposing_party",
@@ -205,10 +204,16 @@ class InterviewSession:
             "severity",
         ):
             val = getattr(extracted, key)
-            if val not in (None, ""):
-                setattr(self.facts, key, val)
-                if key == "practice_area":
-                    self.facts.case_type = str(val)
+            if val in (None, ""):
+                continue
+            if key == "incident_date":
+                normalized = infer_incident_date(str(val))
+                if normalized:
+                    self.facts.incident_date = normalized
+                continue
+            setattr(self.facts, key, val)
+            if key == "practice_area":
+                self.facts.case_type = str(val)
         if extracted.damages is not None:
             self.facts.damages = int(extracted.damages)
 

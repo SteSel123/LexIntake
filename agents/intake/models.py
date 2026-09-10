@@ -71,7 +71,10 @@ class ExtractedIntakeFields(BaseModel):
     opposing_party: str | None = Field(default=None, description="Opposing or at-fault party")
     practice_area: str | None = Field(default=None, description="Legal practice area")
     jurisdiction: str | None = Field(default=None, description="US state code, e.g. CA")
-    incident_date: str | None = Field(default=None, description="Incident date YYYY-MM-DD when known")
+    incident_date: str | None = Field(
+        default=None,
+        description="Incident date as YYYY-MM-DD when known (normalize other formats first)",
+    )
     damages: int | None = Field(default=None, description="Estimated damages in USD")
     severity: str | None = Field(default=None, description="low, medium, or high")
 

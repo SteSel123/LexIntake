@@ -32,7 +32,11 @@
       </div>
       <div id="chat" class="chat" aria-live="polite"></div>
       <form id="chat-form" class="chat-form">
-        <input id="chat-input" type="text" placeholder="Answer the agent’s question or describe your matter…" autocomplete="off" required />
+        <div class="chat-compose">
+          <input id="chat-input" type="text" placeholder="Answer the agent’s question or describe your matter…" autocomplete="off" required />
+          <input id="chat-date" type="date" hidden />
+          <button type="button" id="chat-input-mode" class="btn link" hidden>Type relative date instead</button>
+        </div>
         <button type="submit" class="btn primary">Send</button>
       </form>
       <div id="interview-result" class="result" hidden></div>

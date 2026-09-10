@@ -98,7 +98,7 @@ body {
 
 .examples label { color: var(--muted); }
 
-textarea, input[type="text"], select {
+textarea, input[type="text"], input[type="date"], select {
   width: 100%;
   font: inherit;
   color: var(--ink);
@@ -162,6 +162,23 @@ textarea { resize: vertical; margin: 0.5rem 0 0.75rem; }
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.65rem;
+  align-items: end;
+}
+
+.chat-compose {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.btn.link {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0.15rem 0;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .error {
