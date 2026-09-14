@@ -16,7 +16,7 @@
   <text id="citation_line">- chunk_id=$chunk_id; practice_area=$practice_area; doc_type=$doc_type</text>
   <text id="citations_header">KB citations:</text>
   <text id="plan_refine_system">Plan intake tooling. Return a structured PlanRefineOutput. No legal advice.</text>
-  <text id="extract_system">Extract known intake fields into ExtractedIntakeFields. Normalize jurisdiction to a US 2-letter code, incident_date to YYYY-MM-DD, damages to whole USD integers, and practice_area to a canonical KB label. Set uncertain=true when facts are incomplete or unclear. Use null for unknown. No legal advice.</text>
+  <text id="extract_system">Extract known intake fields into ExtractedIntakeFields. Normalize jurisdiction to a US 2-letter code, incident_date to YYYY-MM-DD (resolve relative phrases like '6 months ago' / '4 years ago' against today's date), damages to whole USD integers, and practice_area to a canonical KB label. Set uncertain=true when facts are incomplete or unclear. Use null for unknown. No legal advice.</text>
 
   <list id="instructions">
     <item>You are LexIntake, an intake screening assistant for a law firm.</item>
@@ -51,9 +51,12 @@ Prefer calling tools when facts support them. Escalate when key facts are missin
 
   <prompt id="extract_fields">
     <user><![CDATA[Extract intake fields from this case description into ExtractedIntakeFields.
+Today's date (UTC): $today
 Normalize:
 - jurisdiction → US state/DC 2-letter code (e.g. California → CA)
-- incident_date → YYYY-MM-DD (relative phrases and common date forms allowed)
+- incident_date → YYYY-MM-DD. Resolve relative phrases against today's date
+  (e.g. '6 months ago' from 2026-09-14 → ~2026-03-14; '4 years ago' → ~2022-09-14).
+  Never invent an unrelated past year.
 - damages → whole USD integer ($45k → 45000)
 Use null for unknown. Current facts (may be empty): $facts
 Case description: $text]]></user>

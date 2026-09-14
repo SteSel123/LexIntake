@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from typing import Any
 
 from agno.agent import Agent
@@ -235,6 +236,7 @@ class IntakeAgent(Agent):
                 "extract_fields",
                 facts=current.model_dump_json(),
                 text=text,
+                today=date.today().isoformat(),
             ),
             ExtractedIntakeFields,
             system=PROMPTS.text("extract_system"),
@@ -316,8 +318,9 @@ class IntakeAgent(Agent):
         """
         Run intake tools (SOL, conflict, estimate, routing).
 
-        Prefers Agno Agent.run (LLM picks/calls tools) when a model is ready;
-        otherwise (or on failure) runs the planned tools deterministically.
+        Prefers Agno Agent.run (LLM picks/calls tools) when a model is ready,
+        then fills missing planned results deterministically; otherwise (or on
+        failure) runs the planned tools deterministically only.
         """
         if self.llm_ready:
             try:
@@ -339,8 +342,8 @@ class IntakeAgent(Agent):
     def _use_tools_agentic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
         """
         Let Agno run tools via the LLM, then map run_out.tools → ToolPhaseResult.
-        Does not re-run tools deterministically; offline/fallback uses
-        `_use_tools_deterministic` from `use_tools` when there is no model.
+        Fill gaps from the deterministic path so planned SOL/conflict/estimate/route
+        checks are not skipped when the LLM omits or mangles a tool row.
         """
         run_out = self.run(
             PROMPTS.user("use_tools", facts=facts.model_dump_json(), tools_to_call=plan.tools_to_call)
@@ -371,6 +374,14 @@ class IntakeAgent(Agent):
                 result.estimate = payload
             elif "route" in name:
                 result.routing = payload
+
+        # Planned tools: deterministic path is the audit source of truth.
+        # Agentic results only fill gaps (avoids incomplete LLM tool rows wiping SOL/estimate).
+        det = self._use_tools_deterministic(facts, plan)
+        result.sol = det.sol or result.sol
+        result.conflict = det.conflict or result.conflict
+        result.estimate = det.estimate or result.estimate
+        result.routing = det.routing or result.routing
 
         in_tok, out_tok, total, cost = usage_from_run(run_out)
         self._accumulate_agno_usage(in_tok, out_tok, total, cost)
