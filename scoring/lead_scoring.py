@@ -1,22 +1,46 @@
-"""Deterministic Lead Scoring Engine for LexIntake."""
+"""
+Deterministic Lead Scoring Engine for LexIntake.
+
+Combines SOL, conflict, case value, acceptance criteria, practice-area fit,
+and attorney availability into a 0–100 score and SCHEDULE_CONSULT / REVIEW /
+REJECT decision. Same inputs always produce the same LeadScoreOutput.
+"""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from agents.intake.constants import LEGAL_DISCLAIMER
+from agents.intake.models import KBCitation
+from scoring.constants import (
+    ACCEPTANCE_MAX_POINTS,
+    ACCEPTANCE_PENALTY_PER_UNMET,
+    ACCEPTANCE_POINTS_PER_MATCH,
+    ATTORNEY_AVAILABLE_BOOST,
+    CASE_VALUE_DIVISOR,
+    CASE_VALUE_MAX_POINTS,
+    HIGH_VALUE_BOOST,
+    HIGH_VALUE_THRESHOLD,
+    INSUFFICIENT_DATA_MSG,
+    MISSING_DATA_PENALTY,
+    PRACTICE_MATCH_POINTS,
+    PRACTICE_MISMATCH_FACTOR,
+    SCORE_REVIEW_MIN,
+    SCORE_SCHEDULE_MIN,
+    SCORING_SCOPE_DISCLAIMER,
+    SOL_URGENCY_BOOST,
+    SOL_URGENCY_DAYS,
+)
+from monitoring.app_logging import get_console_logger, log_optional_failure
+from tools.common import attorney_key
 
-LEGAL_DISCLAIMER = "This is not legal advice. Consult a licensed attorney."
-INSUFFICIENT_DATA_MSG = "Insufficient data — escalating to a human intake specialist."
+_logger = get_console_logger("scoring")
 
 
 def _observe_score(score: int, estimate: float | None, escalate: bool, reason: str = "") -> None:
+    """Emit monitoring metrics; failures are swallowed so scoring never breaks."""
     try:
         from monitoring.logger import log_case_value, log_escalation, log_event, log_lead_score
 
@@ -30,31 +54,41 @@ def _observe_score(score: int, estimate: float | None, escalate: bool, reason: s
                 log_event("sol_failure", {"reason": "sol_invalid"})
             if "conflict" in reason.lower():
                 log_event("conflict_detected", {"reason": "conflict"})
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — monitoring must not break scoring
+        log_optional_failure(_logger, "score observation", exc)
+
+
+def _log_attorney_route(name: str) -> None:
+    """Record attorney assignment for routing analytics (best-effort)."""
+    try:
+        from monitoring.logger import log_event
+
+        log_event("attorney_route", {"attorney_key": attorney_key(name)})
+    except Exception as exc:  # noqa: BLE001
+        log_optional_failure(_logger, "attorney_route metric", exc)
 
 Priority = Literal["High", "Medium", "Low"]
 Decision = Literal["SCHEDULE_CONSULT", "REJECT", "REVIEW"]
 
 
-class KBCitation(BaseModel):
-    practice_area: str = ""
-    doc_type: str = ""
-    chunk_id: str = ""
-
-
 class SOLContext(BaseModel):
+    """Statute-of-limitations screening result from check_statute_of_limitations."""
+
     valid: bool | None = None
     expires_in: int | None = None
     explanation: str = ""
 
 
 class ConflictContext(BaseModel):
+    """Conflict-of-interest screening result from conflict_check."""
+
     conflict: bool | None = None
     details: list[Any] = Field(default_factory=list)
 
 
 class CaseValueContext(BaseModel):
+    """Settlement estimate from estimate_case_value."""
+
     estimate: float | None = None
     range_low: float | None = None
     range_high: float | None = None
@@ -82,6 +116,7 @@ class AcceptanceCriteriaContext(BaseModel):
     practice_area_match: bool | None = None
 
     def resolved_matched(self) -> list[str]:
+        """Normalize legacy/count-only acceptance payloads to a matched list."""
         if self.matched:
             return list(self.matched)
         if self.must_have_matched:
@@ -91,6 +126,7 @@ class AcceptanceCriteriaContext(BaseModel):
         return []
 
     def resolved_unmet(self) -> list[str]:
+        """Normalize legacy/count-only acceptance payloads to an unmet list."""
         if self.unmet_required:
             return list(self.unmet_required)
         if self.must_have_unmet:
@@ -101,6 +137,8 @@ class AcceptanceCriteriaContext(BaseModel):
 
 
 class LeadScoreContext(BaseModel):
+    """All structured inputs required by score_lead()."""
+
     sol: SOLContext = Field(default_factory=SOLContext)
     conflict: ConflictContext = Field(default_factory=ConflictContext)
     case_value: CaseValueContext = Field(default_factory=CaseValueContext)
@@ -120,12 +158,15 @@ class LeadScoreContext(BaseModel):
         return value
 
     def acceptance(self) -> AcceptanceCriteriaContext:
+        """Return acceptance criteria as a typed model regardless of input shape."""
         if isinstance(self.acceptance_criteria, AcceptanceCriteriaContext):
             return self.acceptance_criteria
         return AcceptanceCriteriaContext.model_validate(self.acceptance_criteria)
 
 
 class LeadScoreOutput(BaseModel):
+    """Final scoring decision exposed to intake API, UI, and agents."""
+
     qualified: bool
     lead_score: int = Field(..., ge=0, le=100)
     priority: Priority
@@ -135,18 +176,21 @@ class LeadScoreOutput(BaseModel):
 
 
 def _clamp_score(value: float) -> int:
+    """Round and bound raw float score to integer 0–100."""
     return int(max(0, min(100, round(value))))
 
 
 def _decision_from_score(score: int) -> tuple[bool, Priority, Decision]:
-    if score >= 70:
+    """Map clamped score to qualified flag, priority band, and decision label."""
+    if score >= SCORE_SCHEDULE_MIN:
         return True, "High", "SCHEDULE_CONSULT"
-    if score >= 40:
+    if score >= SCORE_REVIEW_MIN:
         return True, "Medium", "REVIEW"
     return False, "Low", "REJECT"
 
 
 def _format_citations(citations: list[KBCitation]) -> str:
+    """Render KB citation metadata for human-readable explanation text."""
     if not citations:
         return ""
     lines = [
@@ -157,6 +201,26 @@ def _format_citations(citations: list[KBCitation]) -> str:
     if not lines:
         return ""
     return "KB citations:\n" + "\n".join(lines)
+
+
+def _compose_explanation(
+    *leading: str,
+    reasons: list[str],
+    missing: list[str],
+    citations: list[KBCitation],
+) -> str:
+    """Shared explanation layout for hard-reject and normal scoring paths."""
+    parts = [p for p in leading if p]
+    if reasons:
+        parts.append(" ".join(reasons))
+    if missing:
+        parts.append(INSUFFICIENT_DATA_MSG)
+    cite_block = _format_citations(citations)
+    if cite_block:
+        parts.append(cite_block)
+    parts.append(LEGAL_DISCLAIMER)
+    parts.append(SCORING_SCOPE_DISCLAIMER)
+    return " ".join(p for p in parts if p).strip()
 
 
 def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
@@ -209,9 +273,16 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
         reasons.append(hard_reject_reason)
     elif ctx.sol.valid is True:
         reasons.append("SOL appears valid based on provided screening data.")
-        if ctx.sol.expires_in is not None and ctx.sol.expires_in >= 0 and ctx.sol.expires_in < 60:
-            score += 10
-            reasons.append(f"Urgency boost: SOL expires in {ctx.sol.expires_in} days (< 60).")
+        if (
+            ctx.sol.expires_in is not None
+            and ctx.sol.expires_in >= 0
+            and ctx.sol.expires_in < SOL_URGENCY_DAYS
+        ):
+            score += SOL_URGENCY_BOOST
+            reasons.append(
+                f"Urgency boost: SOL expires in {ctx.sol.expires_in} days "
+                f"(< {SOL_URGENCY_DAYS})."
+            )
 
     # ---- 2) Conflict hard reject -------------------------------------------
     if ctx.conflict.conflict is True:
@@ -222,27 +293,19 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
         reasons.append("No conflict detected in client screening.")
 
     if hard_reject:
-        explanation_parts = [
-            hard_reject_reason,
-            "Lead rejected by deterministic screening rules.",
-            " ".join(reasons),
-        ]
-        if missing:
-            explanation_parts.append(INSUFFICIENT_DATA_MSG)
-        cite_block = _format_citations(ctx.citations)
-        if cite_block:
-            explanation_parts.append(cite_block)
-        explanation_parts.append(LEGAL_DISCLAIMER)
-        explanation_parts.append(
-            "This scoring evaluates intake viability only and does not prescribe legal action."
-        )
         out = LeadScoreOutput(
             qualified=False,
             lead_score=0,
             priority="Low",
             decision="REJECT",
             recommended_attorney=ctx.recommended_attorney,
-            explanation=" ".join(p for p in explanation_parts if p).strip(),
+            explanation=_compose_explanation(
+                hard_reject_reason,
+                "Lead rejected by deterministic screening rules.",
+                reasons=reasons,
+                missing=missing,
+                citations=ctx.citations,
+            ),
         )
         _observe_score(
             0,
@@ -254,16 +317,18 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
 
     # ---- 3) Case value (0–40) + high-value boost ---------------------------
     estimate = float(ctx.case_value.estimate or 0.0)
-    case_value_points = min(40.0, estimate / 2500.0)
+    case_value_points = min(CASE_VALUE_MAX_POINTS, estimate / CASE_VALUE_DIVISOR)
     score += case_value_points
     reasons.append(f"Case value points={case_value_points:.2f} from estimate={estimate:.2f}.")
-    if estimate > 100_000:
-        score += 10
-        reasons.append("Priority boost: estimated value exceeds $100,000.")
+    if estimate > HIGH_VALUE_THRESHOLD:
+        score += HIGH_VALUE_BOOST
+        reasons.append(f"Priority boost: estimated value exceeds ${HIGH_VALUE_THRESHOLD:,}.")
 
     # ---- 4) Acceptance criteria (0–30) -------------------------------------
-    acceptance_points = (5 * len(matched)) + (-10 * len(unmet))
-    acceptance_points = max(0.0, min(30.0, float(acceptance_points)))
+    acceptance_points = (ACCEPTANCE_POINTS_PER_MATCH * len(matched)) + (
+        -ACCEPTANCE_PENALTY_PER_UNMET * len(unmet)
+    )
+    acceptance_points = max(0.0, min(ACCEPTANCE_MAX_POINTS, float(acceptance_points)))
     score += acceptance_points
     reasons.append(
         f"Acceptance criteria points={acceptance_points:.1f} "
@@ -279,26 +344,30 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
         practice_match = bool(ctx.practice_area)
 
     if practice_match is False:
-        score *= 0.5
-        reasons.append("Practice area mismatch: total score reduced by 50%.")
+        score *= PRACTICE_MISMATCH_FACTOR
+        reasons.append(
+            f"Practice area mismatch: total score reduced by "
+            f"{int((1 - PRACTICE_MISMATCH_FACTOR) * 100)}%."
+        )
     else:
         # Practice area match contributes up to 20 informational points when matched
         # and criteria were evaluable. Kept additive and deterministic.
-        practice_points = 20.0 if ctx.practice_area else 0.0
+        practice_points = PRACTICE_MATCH_POINTS if ctx.practice_area else 0.0
         score += practice_points
         reasons.append(f"Practice area match points={practice_points:.1f}.")
 
     # ---- 6) Attorney availability ------------------------------------------
     if ctx.recommended_attorney:
-        score += 5
-        reasons.append(f"Attorney available: {ctx.recommended_attorney} (+5).")
+        score += ATTORNEY_AVAILABLE_BOOST
+        reasons.append(
+            f"Attorney available: {ctx.recommended_attorney} (+{ATTORNEY_AVAILABLE_BOOST})."
+        )
     else:
         reasons.append("No recommended attorney assigned.")
 
     # ---- missing-data penalty ----------------------------------------------
     if missing:
-        score -= 15
-        reasons.append(INSUFFICIENT_DATA_MSG)
+        score -= MISSING_DATA_PENALTY
         reasons.append(f"Missing fields: {', '.join(missing)}.")
 
     lead_score = _clamp_score(score)
@@ -313,27 +382,18 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
         else "Case does not meet automatic qualification thresholds."
     )
 
-    explanation_parts = [
-        summary,
-        " ".join(reasons),
-    ]
-    if missing:
-        explanation_parts.append(INSUFFICIENT_DATA_MSG)
-    cite_block = _format_citations(ctx.citations)
-    if cite_block:
-        explanation_parts.append(cite_block)
-    explanation_parts.append(LEGAL_DISCLAIMER)
-    explanation_parts.append(
-        "This scoring evaluates intake viability only and does not prescribe legal action."
-    )
-
     out = LeadScoreOutput(
         qualified=qualified,
         lead_score=lead_score,
         priority=priority,
         decision=decision,
         recommended_attorney=ctx.recommended_attorney,
-        explanation=" ".join(p for p in explanation_parts if p).strip(),
+        explanation=_compose_explanation(
+            summary,
+            reasons=reasons,
+            missing=missing,
+            citations=ctx.citations,
+        ),
     )
     _observe_score(
         lead_score,
@@ -342,17 +402,12 @@ def score_lead(context: LeadScoreContext | dict[str, Any]) -> LeadScoreOutput:
         reason="insufficient_data" if missing else ("review" if decision == "REVIEW" else ""),
     )
     if ctx.recommended_attorney:
-        try:
-            from monitoring.logger import log_event
-
-            key = "".join(ch if ch.isalnum() else "_" for ch in ctx.recommended_attorney.lower())
-            log_event("attorney_route", {"attorney_key": key[:80]})
-        except Exception:
-            pass
+        _log_attorney_route(ctx.recommended_attorney)
     return out
 
 
 if __name__ == "__main__":
+    # Smoke test + determinism assertion for local debugging.
     sample = {
         "sol": {
             "valid": True,

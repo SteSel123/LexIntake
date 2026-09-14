@@ -1,4 +1,8 @@
-"""Evaluation metrics collector for LexIntake."""
+"""Evaluation metrics collector for LexIntake labeled-lead runs.
+
+Compares agent outputs against CSV expectations and rolls up accuracy, grounding,
+guardrail compliance, cost, and per-provider comparison tables.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from typing import Any
 
 
 def _parse_range(value: str | float | int) -> tuple[float, float]:
+    """Parse ``low-high`` or scalar expected case-value ranges from CSV."""
     if isinstance(value, (int, float)):
         v = float(value)
         return v, v
@@ -19,6 +24,7 @@ def _parse_range(value: str | float | int) -> tuple[float, float]:
 
 
 def _as_bool(value: Any) -> bool:
+    """Coerce CSV booleans for expected qualification and escalation columns."""
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
@@ -26,6 +32,8 @@ def _as_bool(value: Any) -> bool:
 
 @dataclass
 class EvalMetrics:
+    """Accumulates per-lead correctness counters and provider comparison rows."""
+
     total_leads: int = 0
     correct_qualification: int = 0
     correct_priority: int = 0
@@ -44,6 +52,7 @@ class EvalMetrics:
     provider_comparison: dict[str, Any] = field(default_factory=dict)
 
     def update(self, lead: dict[str, Any], agent_output: dict[str, Any]) -> None:
+        """Record one primary-provider result against labeled expectations."""
         self.total_leads += 1
 
         expected_qual = _as_bool(lead.get("expected_qualification"))
@@ -165,6 +174,7 @@ class EvalMetrics:
         return comparison
 
     def summary(self) -> dict[str, Any]:
+        """Return rounded aggregate metrics suitable for logging and reports."""
         acc = self.compute_accuracy()
         return {
             "total_leads": self.total_leads,

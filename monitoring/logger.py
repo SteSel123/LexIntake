@@ -1,4 +1,8 @@
-"""Structured JSON logger for LexIntake observability (stdlib only)."""
+"""Structured JSONL logger for LexIntake observability (stdlib only).
+
+Events are sanitized to omit client PII and raw KB text; an optional hook forwards
+metadata-only payloads to ``monitoring.metrics`` for dashboard aggregation.
+"""
 
 from __future__ import annotations
 

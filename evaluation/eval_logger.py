@@ -1,4 +1,8 @@
-"""JSON-lines logger for LexIntake evaluation runs."""
+"""JSON-lines logger for LexIntake evaluation runs.
+
+Writes sanitized per-lead results, guardrail violations, and aggregate metrics to
+``evaluation/logs/evaluation.jsonl`` for offline analysis and CI artifacts.
+"""
 
 from __future__ import annotations
 
@@ -50,6 +54,8 @@ def _sanitize(value: Any) -> Any:
 
 
 class EvalLogger:
+    """Thread-safe JSONL writer for evaluation events (PII stripped)."""
+
     def __init__(self, log_path: Path | str | None = None) -> None:
         self.log_path = Path(log_path or DEFAULT_LOG_PATH)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)

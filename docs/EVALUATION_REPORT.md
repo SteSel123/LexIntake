@@ -4,20 +4,23 @@
 **Harness:** `python evaluation/run_evaluation.py`  
 **Dataset:** `evaluation/leads.csv` (30 labeled synthetic leads)  
 **Stack under test:**  
-- **Local / CI:** deterministic IntakeAgent + hash embeddings + LanceDB + SQLite + lead scoring  
-- **Live (optional):** OpenAI `text-embedding-3-small` + `gpt-4.1` (and Anthropic/Groq when keys are set) 
+- OpenAI `text-embedding-3-small` + `gpt-4.1` (Anthropic/Groq optional for comparison)  
+- PostgreSQL + pgvector + lead scoring  
+
+Headline tables below are a **historical snapshot** from an earlier deterministic/hash evaluation run (2026-08-13). Reproduce live numbers with a configured `OPENAI_API_KEY`.
 
 > This report evaluates screening behavior. **This is not legal advice.**
 
 ## 1. Setup
 
-1. Seed SQLite: `python db/init_structured_db.py`  
-2. Load vectors: `python db/load_kb_docs.py`  
-3. Run eval: `python evaluation/run_evaluation.py`  
+1. Start Postgres: `docker compose up -d`  
+2. Seed DB: `python -m db.init_structured_db`  
+3. Load vectors: `python -m etl.pipeline`  
+4. Run eval: `python evaluation/run_evaluation.py`  
 
 Metrics are logged to `evaluation/logs/evaluation.jsonl`.
 
-## 2. Headline results (local provider)
+## 2. Headline results (historical hash-path snapshot)
 
 | Metric | Result |
 |--------|--------|
@@ -31,14 +34,14 @@ Metrics are logged to `evaluation/logs/evaluation.jsonl`.
 | Guardrail compliance | **100.00%** |
 | Abstention rate | 60.00% |
 | Abstention accuracy | 36.67% |
-| Avg cost / lead (local) | $0.0000 |
+| Avg cost / lead (historical) | $0.0000 |
 | Avg latency / lead | ~88 ms |
 
 ## 3. Dimension analysis
 
 ### 3.1 Retrieval quality
 
-Retrieval hit rate against requested top‑k is strong (**~87%**). Filtered LanceDB queries usually return practice-area–relevant chunks (acceptance criteria, SOL, past cases).
+Retrieval hit rate against requested top‑k is strong (**~87%**). Filtered pgvector queries usually return practice-area–relevant chunks (acceptance criteria, SOL, past cases).
 
 **Interpretation:** retrieval infrastructure is healthy for demo/capstone use.
 
@@ -82,29 +85,27 @@ System escalates frequently (**60%** rate), which is conservative/safe, but abst
 
 ### 3.7 Cost & latency
 
-Local path is effectively free and fast (~88 ms/lead average in this run). Suitable for classroom demos and CI smoke tests.
+The historical hash-path run was effectively free and fast (~88 ms/lead). Live OpenAI evaluation adds token cost and higher latency.
 
 ### 3.8 Provider comparison
 
-**CI / offline:** run with `--providers local:deterministic` (no API keys).
-
-**Live:** configure keys in `.env` and run e.g.:
+Configure keys in `.env` and run e.g.:
 
 ```powershell
 python evaluation/run_evaluation.py --providers openai:gpt-4.1,anthropic:claude-3.5-sonnet,groq:llama-3-70b --limit 5
 ```
 
-Baseline local numbers from the capstone harness (hash path, full 30 leads):
+Historical hash-path numbers (retired; full 30 leads):
 
 | Provider | Qual acc | Abst acc | Grounding | Avg ms | Avg cost |
 |----------|----------|----------|-----------|--------|----------|
-| local | 50.00% | 36.67% | 100% | 88.3 | $0.0000 |
+| hash (retired) | 50.00% | 36.67% | 100% | 88.3 | $0.0000 |
 
 Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrails** with real embeddings + gpt-4.1 narratives; cost/latency vary by token usage.
 
 ## 4. Scenario spot checks (UI demo)
 
-`python ui/demo.py` — 4/4 pass (deterministic / CI mode):
+`python frontend/demo.py` — 4/4 pass (requires live embeddings/LLM):
 
 1. Valid PI → `SCHEDULE_CONSULT`  
 2. Expired SOL → `REJECT`  
@@ -116,10 +117,9 @@ Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrai
 **Strengths**
 
 - Strong grounding and guardrail compliance
-- Solid retrieval hit rate (hash and OpenAI paths)
-- Fast, reproducible local evaluation for CI
+- Solid retrieval hit rate on OpenAI embeddings
 - Clear decision schema for intake ops
-- Offline GitHub Actions smoke workflow
+- GitHub Actions smoke workflow with live OpenAI
 
 **Gaps**
 
@@ -133,11 +133,11 @@ Live OpenAI smoke (`--limit 2`) on 2026-08-13 showed **100% grounding / guardrai
 
 ```powershell
 pip install -r requirements.txt
-copy .env.example .env   # optional: set OPENAI_API_KEY for live path
-python db/init_structured_db.py
-python db/load_kb_docs.py
-python evaluation/run_evaluation.py --providers local:deterministic --limit 5
-python ui/demo.py
+copy .env.example .env   # set OPENAI_API_KEY
+python -m db.init_structured_db
+python -m etl.pipeline
+python evaluation/run_evaluation.py --providers openai:gpt-4.1 --limit 5
+python frontend/demo.py
 ```
 
-CI equivalent: `.github/workflows/ci.yml` (hash embeddings, `--limit 5`).
+CI equivalent: `.github/workflows/ci.yml` (OpenAI embeddings + LLM, `--limit 5`; secret `OPENAI_API_KEY`).

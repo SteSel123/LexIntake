@@ -1,0 +1,8 @@
+{
+  "buildCommand": "node build-config.js",
+  "outputDirectory": ".",
+  "framework": null,
+  "rewrites": [
+    { "source": "/((?!config\\.js|app\\.js|styles\\.css).*)", "destination": "/index.html" }
+  ]
+}

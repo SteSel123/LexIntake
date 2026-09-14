@@ -1,16 +1,19 @@
-"""LLM factory for LexIntake (OpenAI / Anthropic / Groq)."""
+"""LLM factory and single-shot completion helpers for LexIntake.
+
+Centralizes provider selection (OpenAI, Anthropic, Groq), model alias resolution,
+Agno run-metrics usage extraction, and structured Agno agent runs.
+Intake and interview agents call these helpers instead of wiring Agno directly.
+"""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from typing import Any
+import inspect
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from pydantic import BaseModel, ValidationError
 
-from config import (  # noqa: E402
+from config import (
     ANTHROPIC_API_KEY,
     GROQ_API_KEY,
     LLM_MODEL,
@@ -18,6 +21,18 @@ from config import (  # noqa: E402
     OPENAI_API_KEY,
     require_openai_api_key,
 )
+from monitoring.app_logging import get_console_logger, log_optional_failure
+
+TModel = TypeVar("TModel", bound=BaseModel)
+_logger = get_console_logger("agents.llm")
+
+
+def _agent_kwargs(**kwargs: Any) -> dict[str, Any]:
+    """Keep only Agent.__init__ kwargs supported by the installed Agno version."""
+    from agno.agent import Agent
+
+    supported = inspect.signature(Agent.__init__).parameters
+    return {key: value for key, value in kwargs.items() if key in supported}
 
 
 def build_model(
@@ -28,6 +43,7 @@ def build_model(
     active = (provider or LLM_PROVIDER or "openai").lower()
     model = model_id or LLM_MODEL
 
+    # Friendly config names → provider-specific model IDs
     aliases = {
         "claude-3.5-sonnet": "claude-3-5-sonnet-latest",
         "claude-3-5-sonnet": "claude-3-5-sonnet-latest",
@@ -35,9 +51,6 @@ def build_model(
         "llama3-70b": "llama3-70b-8192",
     }
     model = aliases.get(model or "", model)
-
-    if active in {"local", "deterministic", "hash", "none"}:
-        raise RuntimeError(f"Provider {active} has no remote LLM")
 
     if active == "openai":
         from agno.models.openai import OpenAIChat
@@ -62,9 +75,8 @@ def build_model(
 
 
 def provider_available(provider: str) -> bool:
+    """Return True when the provider's API key is configured in the environment."""
     p = provider.lower()
-    if p in {"local", "deterministic", "hash", "none"}:
-        return True
     if p == "openai":
         return bool(OPENAI_API_KEY)
     if p == "anthropic":
@@ -72,3 +84,90 @@ def provider_available(provider: str) -> bool:
     if p == "groq":
         return bool(GROQ_API_KEY)
     return False
+
+
+@dataclass
+class CompletionResult:
+    """Normalized result from a single LLM call, with optional parsed Pydantic payload."""
+
+    content: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost: float = 0.0
+    parsed: BaseModel | None = None
+
+
+def usage_from_run(run_out: Any) -> tuple[int, int, int, float]:
+    """Read tokens and cost from Agno ``run.metrics`` (populated when OTEL/tracing is on)."""
+    metrics = getattr(run_out, "metrics", None)
+    in_tok = int(getattr(metrics, "input_tokens", None) or getattr(run_out, "input_tokens", None) or 0)
+    out_tok = int(getattr(metrics, "output_tokens", None) or getattr(run_out, "output_tokens", None) or 0)
+    total = int(
+        getattr(metrics, "total_tokens", None)
+        or getattr(run_out, "total_tokens", None)
+        or (in_tok + out_tok)
+    )
+    raw_cost = getattr(metrics, "cost", None)
+    cost = float(raw_cost) if raw_cost is not None else 0.0
+    return in_tok, out_tok, total, cost
+
+
+def _parse_structured(content: Any, output_schema: type[TModel]) -> TModel | None:
+    """Coerce Agno response content into a Pydantic model; return None on failure."""
+    if content is None:
+        return None
+    try:
+        if isinstance(content, output_schema):
+            return content
+        if isinstance(content, BaseModel):
+            return output_schema.model_validate(content.model_dump())
+        if isinstance(content, dict):
+            return output_schema.model_validate(content)
+        if isinstance(content, str) and content.strip():
+            return output_schema.model_validate_json(content)
+    except (ValidationError, ValueError, TypeError) as exc:
+        log_optional_failure(_logger, "structured parse", exc)
+        return None
+    return None
+
+
+def complete_structured(
+    model: Any,
+    prompt: str,
+    output_schema: type[TModel],
+    *,
+    system: str | None = None,
+    name: str = "LexIntake Structured",
+) -> CompletionResult:
+    """Single-shot Agno run with a Pydantic ``output_schema``."""
+    # Graceful no-op when LLM is disabled (tests or missing credentials)
+    if not model:
+        return CompletionResult(content="")
+    from agno.agent import Agent
+
+    agent = Agent(
+        **_agent_kwargs(
+            name=name,
+            model=model,
+            instructions=system,
+            output_schema=output_schema,
+            structured_outputs=True,
+            parse_response=True,
+            markdown=False,
+            reasoning=False,
+        )
+    )
+    run_out = agent.run(prompt, output_schema=output_schema)
+    parsed = _parse_structured(getattr(run_out, "content", None), output_schema)
+    content = parsed.model_dump_json() if parsed is not None else str(getattr(run_out, "content", "") or "")
+    in_tok, out_tok, total, cost = usage_from_run(run_out)
+    return CompletionResult(
+        content=content.strip(),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        total_tokens=total,
+        cost=cost,
+        parsed=parsed,
+    )
+

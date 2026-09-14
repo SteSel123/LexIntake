@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any
+
+from monitoring.app_logging import get_console_logger
 
 ROOT = Path(__file__).resolve().parent.parent
 MON_DIR = Path(__file__).resolve().parent
 TRACES_DB = MON_DIR / "traces.db"
 
-logger = logging.getLogger("lexintake.monitoring.agno")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = get_console_logger("monitoring.agno")
 
 _ENABLED = False
 _TRACE_DB: Any | None = None
@@ -28,7 +23,7 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
     Enable Agno OpenTelemetry tracing once per process.
 
     Stores spans in monitoring/traces.db (local Agno Monitoring).
-    Disable with LEXINTAKE_AGNO_TRACING=0 (used by offline CI).
+    Disable with LEXINTAKE_AGNO_TRACING=0.
     """
     global _ENABLED, _TRACE_DB
     if _ENABLED and not force:
@@ -38,13 +33,6 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
     if flag in {"0", "false", "no", "off"}:
         logger.info("Agno tracing disabled via LEXINTAKE_AGNO_TRACING")
         return False
-
-    # Skip in pure offline/hash CI unless explicitly forced.
-    provider = (os.getenv("LEXINTAKE_LLM_PROVIDER") or "").lower()
-    if provider in {"local", "deterministic", "hash", "none"} and not force:
-        if os.getenv("LEXINTAKE_FORCE_AGNO_TRACING", "").lower() not in {"1", "true", "yes"}:
-            logger.info("Agno tracing skipped for deterministic provider=%s", provider)
-            return False
 
     try:
         from agno.db.sqlite import SqliteDb
@@ -67,10 +55,12 @@ def enable_agno_monitoring(*, force: bool = False) -> bool:
 
 
 def tracing_enabled() -> bool:
+    """Return whether ``enable_agno_monitoring`` succeeded in this process."""
     return _ENABLED
 
 
 def get_trace_db() -> Any | None:
+    """Return the Agno SqliteDb handle when tracing is active."""
     return _TRACE_DB
 
 
@@ -111,7 +101,5 @@ def recent_traces(limit: int = 20) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
     ok = enable_agno_monitoring(force=True)
     print(f"enabled={ok} db={TRACES_DB} exists={TRACES_DB.exists()}")

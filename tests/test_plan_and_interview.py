@@ -1,0 +1,133 @@
+"""Tests for intake plan scheduling and interview sentinel client mapping.
+
+Verifies ``build_plan`` selects core tools when facts are complete and that
+employment+ACME narratives map to the seeded conflict demo client.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+from agents.intake.constants import SENTINEL_NAME, SENTINEL_PARTY
+from agents.intake.models import IntakeFacts
+from agents.intake.plan import build_plan
+from agents.interview.agent import ChatMessage, InterviewSession
+
+
+def test_build_plan_schedules_core_tools():
+    facts = IntakeFacts(
+        name="Alex",
+        opposing_party="City Transit",
+        practice_area="Personal Injury",
+        case_type="Personal Injury",
+        jurisdiction="CA",
+        incident_date="2025-06-01",
+        damages=45_000,
+        narrative="Rear-end collision",
+    )
+    with patch("agents.intake.plan.match_practice_area", return_value="Personal Injury"):
+        plan = build_plan(facts)
+    assert "check_statute_of_limitations" in plan.tools_to_call
+    assert "conflict_check" in plan.tools_to_call
+    assert "estimate_case_value" in plan.tools_to_call
+    assert "route_lead" in plan.tools_to_call
+
+
+def test_build_plan_retrieves_when_area_unknown():
+    facts = IntakeFacts(name="A", opposing_party="B", case_type="obscure_unmapped_matter_xyz")
+    with patch("agents.intake.plan.match_practice_area", return_value=None):
+        plan = build_plan(facts)
+    assert plan.need_retrieval is True
+    assert "route_lead" not in plan.tools_to_call
+
+
+def test_interview_keeps_damages_answer_without_llm():
+    agent = MagicMock()
+    agent.extract_facts = MagicMock(side_effect=lambda text, *, base=None: base or IntakeFacts())
+    session = InterviewSession(agent=agent)
+    session.phase = "collecting"
+    # Leave opposing_party missing so the turn stays in collecting after damages.
+    session.facts = IntakeFacts(
+        name="Alex",
+        practice_area="Personal Injury",
+        case_type="Personal Injury",
+        jurisdiction="CA",
+        incident_date="2025-06-01",
+    )
+    session.messages.append(
+        ChatMessage(
+            role="assistant",
+            content="- What are your estimated damages or losses in USD (number)?",
+        )
+    )
+    turn = session.respond("45000")
+    assert session.facts.damages == 45_000
+    assert "damages" not in turn.missing_fields
+    assert turn.done is False
+
+
+def test_interview_asks_one_question_at_a_time():
+    session = InterviewSession(agent=MagicMock())
+    missing = ["name", "opposing_party", "damages"]
+    msg = session._questions_message(missing)
+    assert "full name" in msg.lower()
+    assert "opposing" not in msg.lower()
+    assert "damages" not in msg.lower()
+
+
+def test_interview_asks_incident_date_alone():
+    session = InterviewSession(agent=MagicMock())
+    missing = [
+        "name",
+        "incident_date",
+        "opposing_party",
+        "damages",
+    ]
+    msg = session._questions_message(missing)
+    assert "incident or event date" in msg.lower()
+    assert "full name" not in msg.lower()
+    assert "opposing" not in msg.lower()
+    assert "damages" not in msg.lower()
+
+
+def test_interview_missing_fields_treats_sentinels_as_incomplete():
+    session = InterviewSession(agent=MagicMock())
+    session.facts = IntakeFacts(name=SENTINEL_NAME, opposing_party=SENTINEL_PARTY)
+    missing = session.missing_fields()
+    assert "name" in missing
+    assert "opposing_party" in missing
+
+
+def test_interview_rejects_invalid_jurisdiction_and_keeps_asking():
+    agent = MagicMock()
+    session = InterviewSession(agent=agent)
+    session.phase = "collecting"
+    session.facts = IntakeFacts(practice_area="Personal Injury", case_type="Personal Injury")
+    session.messages.append(
+        ChatMessage(
+            role="assistant",
+            content="In which US state did this occur (e.g., CA, NV, NY)?",
+        )
+    )
+
+    def fake_extract(text: str, *, base: IntakeFacts | None = None) -> IntakeFacts:
+        facts = (base or IntakeFacts()).model_copy(deep=True)
+        prior = (facts.narrative or "").strip()
+        cleaned = text.strip()
+        facts.narrative = f"{prior}\n{cleaned}".strip() if prior and prior != cleaned else cleaned
+        token = cleaned.upper()
+        if token == "CA":
+            facts.jurisdiction = "CA"
+        return facts
+
+    agent.extract_facts = MagicMock(side_effect=fake_extract)
+
+    turn = session.respond("I don't know")
+    assert turn.done is False
+    assert "jurisdiction" in turn.missing_fields
+    assert session.facts.jurisdiction is None
+
+    turn_ok = session.respond("CA")
+    assert session.facts.jurisdiction == "CA"
+    assert "jurisdiction" not in session.missing_fields()
+    assert turn_ok.done is False

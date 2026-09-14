@@ -1,0 +1,115 @@
+# LexIntake Docker Compose
+#
+# Default — full stack (Postgres + init/ETL + API + Streamlit UI):
+#   copy .env.example .env   # set OPENAI_API_KEY
+#   docker compose up --build
+#   # or: make setup
+#
+# Database only (local Python development):
+#   docker compose up -d postgres
+#
+# UI:  http://localhost:8501
+# API: http://localhost:8000/docs
+
+x-app-env: &app-env
+  PYTHONPATH: /app
+  DATABASE_URL: postgresql://lexintake:lexintake@postgres:5432/lexintake
+  LEXINTAKE_EMBEDDING_PROVIDER: ${LEXINTAKE_EMBEDDING_PROVIDER:-openai}
+  LEXINTAKE_EMBEDDING_MODEL: ${LEXINTAKE_EMBEDDING_MODEL:-text-embedding-3-small}
+  LEXINTAKE_EMBEDDING_DIMS: ${LEXINTAKE_EMBEDDING_DIMS:-1536}
+  LEXINTAKE_LLM_PROVIDER: ${LEXINTAKE_LLM_PROVIDER:-openai}
+  LEXINTAKE_LLM_MODEL: ${LEXINTAKE_LLM_MODEL:-gpt-4.1}
+  LEXINTAKE_AGNO_TRACING: ${LEXINTAKE_AGNO_TRACING:-1}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: lexintake-postgres
+    environment:
+      POSTGRES_USER: lexintake
+      POSTGRES_PASSWORD: lexintake
+      POSTGRES_DB: lexintake
+    ports:
+      - "5432:5432"
+    volumes:
+      - lexintake_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexintake -d lexintake"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  init:
+    build: .
+    image: lexintake-app:latest
+    container_name: lexintake-init
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    command: ["python", "scripts/docker_init.py"]
+
+  api:
+    build: .
+    image: lexintake-app:latest
+    container_name: lexintake-api
+    environment:
+      <<: *app-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    command:
+      - uvicorn
+      - backend.api.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  ui:
+    build: .
+    image: lexintake-app:latest
+    container_name: lexintake-ui
+    environment:
+      <<: *app-env
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    command:
+      - streamlit
+      - run
+      - frontend/app.py
+      - --server.address
+      - "0.0.0.0"
+      - --server.port
+      - "8501"
+      - --browser.gatherUsageStats
+      - "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8501/_stcore/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  lexintake_pgdata:
