@@ -41,6 +41,40 @@ def test_build_plan_retrieves_when_area_unknown():
     assert "route_lead" not in plan.tools_to_call
 
 
+def test_interview_keeps_damages_answer_without_llm():
+    agent = MagicMock()
+    agent.extract_facts = MagicMock(side_effect=lambda text, *, base=None: base or IntakeFacts())
+    session = InterviewSession(agent=agent)
+    session.phase = "collecting"
+    # Leave opposing_party missing so the turn stays in collecting after damages.
+    session.facts = IntakeFacts(
+        name="Alex",
+        practice_area="Personal Injury",
+        case_type="Personal Injury",
+        jurisdiction="CA",
+        incident_date="2025-06-01",
+    )
+    session.messages.append(
+        ChatMessage(
+            role="assistant",
+            content="- What are your estimated damages or losses in USD (number)?",
+        )
+    )
+    turn = session.respond("45000")
+    assert session.facts.damages == 45_000
+    assert "damages" not in turn.missing_fields
+    assert turn.done is False
+
+
+def test_interview_asks_one_question_at_a_time():
+    session = InterviewSession(agent=MagicMock())
+    missing = ["name", "opposing_party", "damages"]
+    msg = session._questions_message(missing)
+    assert "full name" in msg.lower()
+    assert "opposing" not in msg.lower()
+    assert "damages" not in msg.lower()
+
+
 def test_interview_asks_incident_date_alone():
     session = InterviewSession(agent=MagicMock())
     missing = [

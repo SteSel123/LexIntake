@@ -67,7 +67,7 @@ class InterviewSession:
     facts: IntakeFacts = field(default_factory=IntakeFacts)
     messages: list[ChatMessage] = field(default_factory=list)
     phase: InterviewPhase = "greeting"
-    max_questions_per_turn: int = 2
+    max_questions_per_turn: int = 1
 
     def __post_init__(self) -> None:
         if self.agent is None:
@@ -118,7 +118,8 @@ class InterviewSession:
         """Fill facts via LLM structured extraction (money/date/jurisdiction included)."""
         cleaned = text.strip()
 
-        # Direct answers to name / opposing prompts (identity strings only).
+        # Direct answers to the last prompt so a short reply is not lost if LLM
+        # extraction returns null (avoids re-asking the same field).
         last_q = ""
         for m in reversed(self.messages):
             if m.role == "assistant":
@@ -128,28 +129,46 @@ class InterviewSession:
             self.facts.name = cleaned[:120]
         if "opposing" in last_q or "at-fault" in last_q:
             self.facts.opposing_party = cleaned[:160]
+        if "practice" in last_q or "legal matter" in last_q:
+            if len(cleaned) > 2:
+                self.facts.practice_area = cleaned[:80]
+                self.facts.case_type = cleaned[:80]
+        if "jurisdiction" in last_q or "us state" in last_q:
+            from agents.intake.fact_parse import is_valid_jurisdiction
+
+            token = cleaned.strip().upper()
+            if is_valid_jurisdiction(token):
+                self.facts.jurisdiction = token
+        if "incident" in last_q or "event date" in last_q:
+            from agents.intake.fact_parse import is_iso_date
+
+            if is_iso_date(cleaned):
+                self.facts.incident_date = cleaned.strip()[:10]
+        if "damages" in last_q or "losses" in last_q:
+            amount = _parse_usd_amount(cleaned)
+            if amount is not None:
+                self.facts.damages = amount
 
         assert self.agent is not None
         extracted = self.agent.extract_facts(cleaned, base=self.facts)
         if isinstance(extracted, IntakeFacts):
             self.facts = extracted
         else:
-            # Offline / stub agent: keep narrative only (no regex field inference).
+            # Offline / stub agent: keep narrative only (no free-text field inference).
             prior = (self.facts.narrative or "").strip()
             self.facts.narrative = (
                 f"{prior}\n{cleaned}".strip() if prior and prior != cleaned else cleaned
             )
 
     def _questions_message(self, missing: list[str]) -> str:
-        """Format follow-ups from ``FIELD_PROMPTS``.
+        """Ask exactly one follow-up from ``FIELD_PROMPTS`` (never bundle questions).
 
-        ``incident_date`` is always asked alone so the date picker / answer
-        is not mixed with other fields in the same turn.
+        ``incident_date`` is prioritized when missing so the date picker stays focused.
         """
         if "incident_date" in missing:
             asks = ["incident_date"]
         else:
-            asks = missing[: self.max_questions_per_turn]
+            asks = missing[: max(1, self.max_questions_per_turn)]
         lines = [FIELD_PROMPTS[f] for f in asks if f in FIELD_PROMPTS]
         preface = PROMPTS.text("questions_preface")
         return preface + "\n\n" + "\n".join(f"- {q}" for q in lines)
@@ -226,6 +245,21 @@ class InterviewSession:
             screening=screening,
             done=True,
         )
+
+
+def _parse_usd_amount(text: str) -> int | None:
+    """Parse a whole-USD amount from a direct damages answer (e.g. 45000, $45,000, 45k)."""
+    cleaned = (text or "").strip().lower().replace(",", "").replace("$", "").replace(" ", "")
+    if not cleaned:
+        return None
+    multiplier = 1
+    if cleaned.endswith("k"):
+        multiplier = 1000
+        cleaned = cleaned[:-1]
+    try:
+        return int(float(cleaned) * multiplier)
+    except ValueError:
+        return None
 
 
 def build_interview_session(**kwargs: Any) -> InterviewSession:
