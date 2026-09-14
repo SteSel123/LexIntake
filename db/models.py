@@ -124,3 +124,44 @@ class AcceptanceCriteria(Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     created_at: Mapped[str] = mapped_column(Text, nullable=False, server_default=_CREATED_AT)
+
+
+class IntakeLead(Base):
+    """Persisted screening result from ``/analyze`` or interview completion."""
+
+    __tablename__ = "intake_leads"
+    __table_args__ = (
+        Index("idx_intake_leads_created_at", "created_at"),
+        Index("idx_intake_leads_jurisdiction", "jurisdiction"),
+        Index("idx_intake_leads_practice_area", "practice_area"),
+        Index("idx_intake_leads_decision", "decision"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str | None] = mapped_column(Text)
+    opposing_party: Mapped[str | None] = mapped_column(Text)
+    practice_area: Mapped[str | None] = mapped_column(Text)
+    case_type: Mapped[str | None] = mapped_column(Text)
+    jurisdiction: Mapped[str | None] = mapped_column(Text)
+    incident_date: Mapped[str | None] = mapped_column(Text)
+    severity: Mapped[str | None] = mapped_column(Text)
+    damages: Mapped[int | None] = mapped_column(Integer)
+    priority: Mapped[str | None] = mapped_column(Text)
+    narrative: Mapped[str | None] = mapped_column(Text)
+    uncertain: Mapped[bool | None] = mapped_column(Boolean)
+    lead_score: Mapped[int | None] = mapped_column(Integer)
+    decision: Mapped[str | None] = mapped_column(Text)
+    case_viability: Mapped[str | None] = mapped_column(Text)
+    escalate: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    routing_recommendation: Mapped[str | None] = mapped_column(Text)
+    tool_results: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    citations: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, server_default=_CREATED_AT)

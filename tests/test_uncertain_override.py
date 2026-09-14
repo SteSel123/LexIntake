@@ -6,6 +6,8 @@ otherwise schedule a consult.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from agents.intake.models import IntakeFacts, IntakeResponse, KBCitation
 from backend.services.intake_service import build_result_payload
 from scoring.domain import apply_uncertain_narrative_override, is_uncertain_narrative
@@ -131,10 +133,17 @@ def test_finalize_screening_payload_attaches_runtime_fields():
         latency_ms=12.5,
         cost=0.01,
     )
-    payload = finalize_screening_payload(response, facts, facts.narrative or "")
+    with patch(
+        "backend.services.intake_service.persist_intake_lead", return_value="lead-test"
+    ), patch(
+        "scoring.context.load_acceptance_criteria",
+        return_value={"must_have": []},
+    ):
+        payload = finalize_screening_payload(response, facts, facts.narrative or "")
     assert payload["latency_ms"] == 12.5
     assert payload["cost"] == 0.01
     assert payload["parsed_facts"]["practice_area"] == "Personal Injury"
+    assert payload["intake_lead_id"] == "lead-test"
 
 
 def test_score_lead_still_deterministic_after_refactor():

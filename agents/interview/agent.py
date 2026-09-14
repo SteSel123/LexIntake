@@ -141,8 +141,15 @@ class InterviewSession:
             )
 
     def _questions_message(self, missing: list[str]) -> str:
-        """Format up to ``max_questions_per_turn`` follow-ups from ``FIELD_PROMPTS``."""
-        asks = missing[: self.max_questions_per_turn]
+        """Format follow-ups from ``FIELD_PROMPTS``.
+
+        ``incident_date`` is always asked alone so the date picker / answer
+        is not mixed with other fields in the same turn.
+        """
+        if "incident_date" in missing:
+            asks = ["incident_date"]
+        else:
+            asks = missing[: self.max_questions_per_turn]
         lines = [FIELD_PROMPTS[f] for f in asks if f in FIELD_PROMPTS]
         preface = PROMPTS.text("questions_preface")
         return preface + "\n\n" + "\n".join(f"- {q}" for q in lines)

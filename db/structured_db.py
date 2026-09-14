@@ -19,6 +19,7 @@ from db.models import (
     AcceptanceCriteria,
     Attorney,
     Client,
+    IntakeLead,
     PastCase,
     PracticeArea,
     SolRule,
@@ -30,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Paths and revision id used to detect whether Alembic upgrade is needed.
 KB_DIR = ROOT / "kb"
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
-HEAD_REVISION = "003_kb_ref"
+HEAD_REVISION = "005_intake_leads"
 
 
 # --- Public read API -------------------------------------------------------
@@ -190,6 +191,20 @@ def upsert_acceptance_criteria(session, practice_area: str, payload: dict[str, A
         "practice_area",
         ("payload",),
     )
+
+
+def insert_intake_lead(row: dict[str, Any]) -> str:
+    """Insert one screened intake lead and return its id.
+
+    Ensures schema is migrated, then writes a new ``intake_leads`` row.
+    """
+    upgrade_schema()
+    lead_id = str(row.get("id") or "")
+    if not lead_id:
+        raise ValueError("intake lead id is required")
+    with session_scope() as session:
+        session.execute(pg_insert(IntakeLead).values(**row))
+    return lead_id
 
 
 # --- Seed orchestration ----------------------------------------------------

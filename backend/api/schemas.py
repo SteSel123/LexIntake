@@ -51,6 +51,7 @@ class AnalyzeResponse(BaseModel):
     parsed_facts: dict[str, Any] = Field(default_factory=dict)
     latency_ms: float | None = None
     cost: float | None = None
+    intake_lead_id: str | None = None
 
     model_config = {"extra": "allow"}
 

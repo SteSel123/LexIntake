@@ -41,6 +41,21 @@ def test_build_plan_retrieves_when_area_unknown():
     assert "route_lead" not in plan.tools_to_call
 
 
+def test_interview_asks_incident_date_alone():
+    session = InterviewSession(agent=MagicMock())
+    missing = [
+        "name",
+        "incident_date",
+        "opposing_party",
+        "damages",
+    ]
+    msg = session._questions_message(missing)
+    assert "incident or event date" in msg.lower()
+    assert "full name" not in msg.lower()
+    assert "opposing" not in msg.lower()
+    assert "damages" not in msg.lower()
+
+
 def test_interview_missing_fields_treats_sentinels_as_incomplete():
     session = InterviewSession(agent=MagicMock())
     session.facts = IntakeFacts(name=SENTINEL_NAME, opposing_party=SENTINEL_PARTY)
