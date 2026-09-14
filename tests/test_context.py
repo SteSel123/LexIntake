@@ -42,7 +42,11 @@ def test_acceptance_uses_real_signals_not_placeholders(_mock_acc):
 
 @patch("scoring.context.load_acceptance_criteria", return_value={"must_have": []})
 def test_uncertain_narrative_marks_jurisdiction_unmet(_mock_acc):
-    facts = IntakeFacts(practice_area="Immigration", narrative="Unclear immigration facts.")
+    facts = IntakeFacts(
+        practice_area="Immigration",
+        narrative="Unclear immigration facts.",
+        uncertain=True,
+    )
     acc = build_acceptance_criteria(facts, narrative=facts.narrative)
     assert "Jurisdiction confirmed for screening" in acc["unmet_required"]
 

@@ -80,9 +80,9 @@ def build_acceptance_criteria(
             if criterion not in matched:
                 unmet.append(criterion)
 
-    # Uncertain narratives cannot confirm jurisdiction — force unmet so scoring
+    # Uncertain intakes (LLM flag) cannot confirm jurisdiction — force unmet so scoring
     # penalizes and downstream override can escalate to REVIEW.
-    if is_uncertain_narrative(narrative or facts.narrative):
+    if is_uncertain_narrative(uncertain=facts.uncertain):
         if "Jurisdiction confirmed for screening" not in matched:
             unmet.append("Jurisdiction confirmed for screening")
         matched = [m for m in matched if m != "Jurisdiction confirmed for screening"]

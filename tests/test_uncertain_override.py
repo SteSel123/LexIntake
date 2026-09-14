@@ -1,7 +1,7 @@
-"""Tests for uncertain-narrative override and ``build_result_payload`` assembly.
+"""Tests for uncertain-intake override and ``build_result_payload`` assembly.
 
-Ensures incomplete or ambiguous narratives force REVIEW even when raw scores
-would otherwise schedule a consult.
+Ensures LLM ``uncertain`` flags force REVIEW even when raw scores would
+otherwise schedule a consult.
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ from scoring.lead_scoring import LeadScoreOutput, score_lead
 from tools.common import attorney_key
 
 
-def test_is_uncertain_narrative_detects_keywords():
-    assert is_uncertain_narrative("Facts are unclear and incomplete")
+def test_is_uncertain_uses_llm_flag_not_keywords():
+    assert is_uncertain_narrative("Facts are unclear and incomplete", uncertain=True)
+    assert not is_uncertain_narrative("Facts are unclear and incomplete", uncertain=False)
     assert not is_uncertain_narrative("Clear rear-end collision with liability")
 
 
@@ -28,7 +29,7 @@ def test_uncertain_override_forces_review_on_schedule():
         explanation="Strong case.",
     )
     out = apply_uncertain_narrative_override(
-        scored, narrative="unclear immigration facts", tools={}
+        scored, narrative="anything", tools={}, uncertain=True
     )
     assert out.decision == "REVIEW"
     assert out.priority == "Medium"
@@ -48,6 +49,7 @@ def test_uncertain_override_softens_reject_without_hard_fail():
         scored,
         narrative="missing and unknown details",
         tools={"sol": {"valid": True}, "conflict": {"conflict": False}},
+        uncertain=True,
     )
     assert out.decision == "REVIEW"
     assert out.lead_score >= 40
@@ -66,13 +68,18 @@ def test_uncertain_override_keeps_conflict_reject():
         scored,
         narrative="unclear facts",
         tools={"conflict": {"conflict": True}, "sol": {"valid": True}},
+        uncertain=True,
     )
     assert out.decision == "REJECT"
     assert out.lead_score == 0
 
 
 def test_build_result_payload_uses_post_processor():
-    facts = IntakeFacts(practice_area="Immigration", narrative="Unclear immigration facts.")
+    facts = IntakeFacts(
+        practice_area="Immigration",
+        narrative="Unclear immigration facts.",
+        uncertain=True,
+    )
     response = IntakeResponse(
         message="Screening summary. This is not legal advice. Consult a licensed attorney for legal guidance.",
         disclaimer="This is not legal advice. Consult a licensed attorney for legal guidance.",

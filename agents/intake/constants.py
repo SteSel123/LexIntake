@@ -23,7 +23,19 @@ TOP_K_MAX = 10  # Upper cap to control latency and context size
 ESCALATE_MISSING_MIN = 5  # Escalate when this many required fields are still missing
 RESPOND_QUESTIONS_MAX = 3  # Cap follow-up questions in the final response
 
-# Placeholder values used when free-text parse cannot identify parties
+# Placeholder values used when free-text extract cannot identify parties
 SENTINEL_NAME = "Demo Prospect"
 SENTINEL_PARTY = "Unknown Party"
 INTERVIEW_PROSPECT_NAME = "Interview Prospect"
+
+# US state / DC codes accepted as jurisdiction (validation only; LLM fills the field).
+US_STATE_CODES = frozenset(
+    {
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+        "DC",
+    }
+)

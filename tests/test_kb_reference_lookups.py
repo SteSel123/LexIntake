@@ -22,10 +22,18 @@ def test_load_practice_areas_from_postgres(mock_query):
 
 @patch("tools.common.query_structured")
 def test_lookup_sol_rule_from_postgres(mock_query):
-    mock_query.return_value = [{"rule_text": "2 years from injury (CCP §335.1)."}]
+    mock_query.return_value = [
+        {
+            "rule_text": "2 years from injury (CCP §335.1).",
+            "duration_days": 730,
+            "open_ended": False,
+        }
+    ]
     rule = lookup_sol_rule("Personal Injury", "CA")
     assert rule is not None
-    assert "2 years" in rule
+    assert "2 years" in rule["rule_text"]
+    assert rule["duration_days"] == 730
+    assert rule["open_ended"] is False
 
 
 @patch("tools.common.query_structured")

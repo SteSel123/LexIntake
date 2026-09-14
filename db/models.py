@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, Text, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -109,6 +109,8 @@ class SolRule(Base):
     practice_area: Mapped[str] = mapped_column(Text, nullable=False)
     jurisdiction: Mapped[str] = mapped_column(Text, nullable=False)
     rule_text: Mapped[str] = mapped_column(Text, nullable=False)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_ended: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[str] = mapped_column(Text, nullable=False, server_default=_CREATED_AT)
 
 

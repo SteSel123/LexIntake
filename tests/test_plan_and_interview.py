@@ -50,7 +50,8 @@ def test_interview_missing_fields_treats_sentinels_as_incomplete():
 
 
 def test_interview_rejects_invalid_jurisdiction_and_keeps_asking():
-    session = InterviewSession(agent=MagicMock())
+    agent = MagicMock()
+    session = InterviewSession(agent=agent)
     session.phase = "collecting"
     session.facts = IntakeFacts(practice_area="Personal Injury", case_type="Personal Injury")
     session.messages.append(
@@ -59,7 +60,18 @@ def test_interview_rejects_invalid_jurisdiction_and_keeps_asking():
             content="In which US state did this occur (e.g., CA, NV, NY)?",
         )
     )
-    session.agent.complete_structured = MagicMock(return_value=None)
+
+    def fake_extract(text: str, *, base: IntakeFacts | None = None) -> IntakeFacts:
+        facts = (base or IntakeFacts()).model_copy(deep=True)
+        prior = (facts.narrative or "").strip()
+        cleaned = text.strip()
+        facts.narrative = f"{prior}\n{cleaned}".strip() if prior and prior != cleaned else cleaned
+        token = cleaned.upper()
+        if token == "CA":
+            facts.jurisdiction = "CA"
+        return facts
+
+    agent.extract_facts = MagicMock(side_effect=fake_extract)
 
     turn = session.respond("I don't know")
     assert turn.done is False

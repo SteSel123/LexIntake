@@ -1,68 +1,78 @@
-"""Tests for ``agents.intake.fact_parse`` heuristics on free-text case descriptions.
-
-Covers practice-area inference, damage parsing, date/jurisdiction normalization.
-"""
+"""Tests for intake fact helpers: validators + LLM ExtractedIntakeFields mapping."""
 
 from __future__ import annotations
 
+from agents.intake.constants import SENTINEL_NAME, SENTINEL_PARTY, US_STATE_CODES
 from agents.intake.fact_parse import (
-    infer_damages,
-    infer_incident_date,
-    infer_jurisdiction,
-    infer_practice_area,
+    apply_extracted_fields,
     is_iso_date,
     is_valid_jurisdiction,
     parse_case_description,
 )
+from agents.intake.models import ExtractedIntakeFields
 
 
-def test_parse_pi_case_description():
+def test_parse_case_description_is_narrative_stub():
     text = "Rear-end collision in CA, clear liability, $45k damages, incident 6 months ago."
     facts = parse_case_description(text)
+    assert facts.narrative == text
+    assert facts.name == SENTINEL_NAME
+    assert facts.opposing_party == SENTINEL_PARTY
+    assert facts.jurisdiction is None
+    assert facts.damages is None
+    assert facts.incident_date is None
+
+
+def test_apply_extracted_fields_maps_llm_output():
+    extracted = ExtractedIntakeFields(
+        name="Elena Vasquez",
+        opposing_party="ACME Corp",
+        practice_area="Personal Injury",
+        jurisdiction="ca",
+        incident_date="2024-06-15",
+        damages=45_000,
+        severity="high",
+        uncertain=True,
+    )
+    facts = apply_extracted_fields(
+        extracted,
+        narrative="Rear-end collision in California, $45k damages.",
+    )
+    assert facts.name == "Elena Vasquez"
+    assert facts.opposing_party == "ACME Corp"
     assert facts.practice_area == "Personal Injury"
+    assert facts.case_type == "Personal Injury"
     assert facts.jurisdiction == "CA"
+    assert facts.incident_date == "2024-06-15"
     assert facts.damages == 45_000
-    assert facts.incident_date is not None
-    assert is_iso_date(facts.incident_date)
+    assert facts.severity == "high"
+    assert facts.priority == "high"
+    assert facts.uncertain is True
+    assert "Rear-end" in (facts.narrative or "")
 
 
-def test_infer_practice_area_employment():
-    assert infer_practice_area("employment discrimination in CA") == "Employment Law"
+def test_apply_extracted_fields_rejects_invalid_jurisdiction_and_date():
+    extracted = ExtractedIntakeFields(
+        jurisdiction="PE",
+        incident_date="06/15/2024",
+        damages=1000,
+    )
+    facts = apply_extracted_fields(extracted, narrative="test")
+    assert facts.jurisdiction is None
+    assert facts.incident_date is None
+    assert facts.damages == 1000
 
 
-def test_infer_damages_k_suffix():
-    assert infer_damages("estimated damages around 45k") == 45_000
-
-
-def test_infer_incident_date_iso_and_relative():
-    assert infer_incident_date("happened on 2024-06-15") == "2024-06-15"
-    assert is_iso_date(infer_incident_date("3 years ago"))
-
-
-def test_infer_incident_date_common_formats():
-    assert infer_incident_date("06/15/2024") == "2024-06-15"
-    assert infer_incident_date("15/06/2024") == "2024-06-15"
-    assert infer_incident_date("June 15, 2024") == "2024-06-15"
-    assert infer_incident_date("15 June 2024") == "2024-06-15"
-
-
-def test_infer_incident_date_rejects_garbage():
-    assert infer_incident_date("last summer sometime") is None
-    assert infer_incident_date("not-a-date") is None
+def test_is_iso_date():
+    assert is_iso_date("2024-06-15")
     assert not is_iso_date("06/15/2024")
+    assert not is_iso_date("not-a-date")
 
 
-def test_infer_jurisdiction_accepts_codes_and_names():
-    assert infer_jurisdiction("CA") == "CA"
-    assert infer_jurisdiction("california") == "CA"
-    assert infer_jurisdiction("crash in CA last month") == "CA"
-    assert infer_jurisdiction("accident in new york") == "NY"
-
-
-def test_infer_jurisdiction_rejects_non_states():
-    assert infer_jurisdiction("I don't know") is None
-    assert infer_jurisdiction("Personal Injury") is None
-    assert infer_jurisdiction("no") is None
-    assert infer_jurisdiction("skip") is None
+def test_is_valid_jurisdiction():
+    assert is_valid_jurisdiction("CA")
+    assert is_valid_jurisdiction("ny")
+    assert "DC" in US_STATE_CODES
     assert not is_valid_jurisdiction("PE")
     assert not is_valid_jurisdiction("no")
+    assert not is_valid_jurisdiction(None)

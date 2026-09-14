@@ -177,7 +177,7 @@ def upsert_sol_rule(session, row: dict[str, Any]) -> None:
         SolRule,
         row,
         "id",
-        ("practice_area", "jurisdiction", "rule_text"),
+        ("practice_area", "jurisdiction", "rule_text", "duration_days", "open_ended"),
     )
 
 
@@ -230,12 +230,23 @@ def seed_from_kb() -> dict[str, int]:
             for practice_area, rules in sol_tables.items():
                 if not isinstance(rules, dict):
                     continue
-                for jurisdiction, rule_text in rules.items():
+                for jurisdiction, entry in rules.items():
+                    if isinstance(entry, dict):
+                        rule_text = str(entry.get("rule_text") or "")
+                        duration_days = entry.get("duration_days")
+                        open_ended = bool(entry.get("open_ended", False))
+                    else:
+                        # Legacy string-only KB entries: store text, leave duration unset.
+                        rule_text = str(entry)
+                        duration_days = None
+                        open_ended = False
                     row = {
                         "id": _sol_rule_id(str(practice_area), str(jurisdiction)),
                         "practice_area": str(practice_area),
                         "jurisdiction": str(jurisdiction).strip().upper(),
-                        "rule_text": str(rule_text),
+                        "rule_text": rule_text,
+                        "duration_days": int(duration_days) if duration_days is not None else None,
+                        "open_ended": open_ended,
                     }
                     upsert_sol_rule(session, row)
                     sol_rule_counts += 1

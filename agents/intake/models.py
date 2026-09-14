@@ -24,6 +24,7 @@ class IntakeFacts(BaseModel):
     damages: int | None = None
     priority: Literal["low", "medium", "high"] = "medium"
     narrative: str | None = None
+    uncertain: bool | None = None
 
 
 class PlanResult(BaseModel):
@@ -65,18 +66,41 @@ class ScreeningMessage(BaseModel):
 
 
 class ExtractedIntakeFields(BaseModel):
-    """Agno structured output for interview field extraction."""
+    """Agno structured output for free-text intake field extraction (LLM → Pydantic)."""
 
     name: str | None = Field(default=None, description="Prospect full name")
     opposing_party: str | None = Field(default=None, description="Opposing or at-fault party")
-    practice_area: str | None = Field(default=None, description="Legal practice area")
-    jurisdiction: str | None = Field(default=None, description="US state code, e.g. CA")
+    practice_area: str | None = Field(
+        default=None,
+        description=(
+            "Canonical practice area from: Personal Injury, Employment Law, Immigration, "
+            "Family Law, Criminal Defense, Workers’ Compensation, Medical Malpractice, "
+            "Product Liability, Civil Rights, Consumer Protection"
+        ),
+    )
+    jurisdiction: str | None = Field(
+        default=None,
+        description="US state or DC as a 2-letter code (e.g. CA, NY). Normalize full names to codes.",
+    )
     incident_date: str | None = Field(
         default=None,
-        description="Incident date as YYYY-MM-DD when known (normalize other formats first)",
+        description=(
+            "Incident date as YYYY-MM-DD. Normalize relative phrases "
+            "('6 months ago', '3 years ago') and common forms (06/15/2024, June 15, 2024)."
+        ),
     )
-    damages: int | None = Field(default=None, description="Estimated damages in USD")
+    damages: int | None = Field(
+        default=None,
+        description="Estimated damages in whole USD. Normalize '$45k' / '$12,500' to integers.",
+    )
     severity: str | None = Field(default=None, description="low, medium, or high")
+    uncertain: bool | None = Field(
+        default=None,
+        description=(
+            "True when the narrative is incomplete, unclear, missing key facts, "
+            "or the prospect expresses uncertainty about the matter."
+        ),
+    )
 
 
 class KBCitation(BaseModel):

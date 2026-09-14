@@ -2,8 +2,9 @@
 Agno tool: check statute of limitations from Postgres sol_rules.
 
 Determines whether a claim is still within the filing deadline using KB rules
-seeded from kb/sol_tables.json. Returns conservative fallbacks when data is
-missing or unparsable so intake can escalate instead of auto-rejecting.
+seeded from kb/sol_tables.json. Uses structured duration_days / open_ended
+(no runtime text parsing). Returns conservative fallbacks when data is missing
+so intake can escalate instead of auto-rejecting.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from datetime import date, datetime, timezone
 from agno.tools import tool
 from pydantic import BaseModel, Field
 
-from tools.common import logger, lookup_sol_rule, match_practice_area, parse_sol_duration_days, tool_timer
+from tools.common import logger, lookup_sol_rule, match_practice_area, tool_timer
 
 
 class CheckSOLInput(BaseModel):
@@ -32,7 +33,7 @@ class CheckSOLOutput(BaseModel):
     explanation: str
 
 
-def _parse_incident_date(value: str) -> date | None:
+def _incident_date(value: str) -> date | None:
     """Parse ISO date prefix; returns None on malformed input."""
     try:
         return date.fromisoformat(value[:10])
@@ -61,7 +62,7 @@ def check_statute_of_limitations(payload: CheckSOLInput) -> CheckSOLOutput:
 def _check_statute_of_limitations_impl(payload: CheckSOLInput) -> CheckSOLOutput:
     """Core SOL logic; wrapped by Agno tool for timing and error boundaries."""
     try:
-        incident = _parse_incident_date(payload.incident_date)
+        incident = _incident_date(payload.incident_date)
         if incident is None:
             return CheckSOLOutput(
                 valid=False,
@@ -96,27 +97,29 @@ def _check_statute_of_limitations_impl(payload: CheckSOLInput) -> CheckSOLOutput
                 ),
             )
 
-        duration_days, open_ended = parse_sol_duration_days(rule)
-        if open_ended:
+        rule_text = str(rule.get("rule_text") or "")
+        if rule.get("open_ended"):
             return CheckSOLOutput(
                 valid=True,
                 expires_in=-1,
                 explanation=(
                     f"{practice_area} in {payload.jurisdiction.upper()} has no fixed filing SOL "
-                    f"in KB ('{rule[:160]}'). Claim remains potentially valid."
+                    f"in KB ('{rule_text[:160]}'). Claim remains potentially valid."
                 ),
             )
 
+        duration_days = rule.get("duration_days")
         if duration_days is None:
             return CheckSOLOutput(
                 valid=True,
                 expires_in=-1,
                 explanation=(
                     f"Fallback: SOL text found for {practice_area}/{payload.jurisdiction.upper()} "
-                    f"but duration could not be parsed deterministically. Rule: {rule[:200]}"
+                    f"but duration_days is unset in KB. Rule: {rule_text[:200]}"
                 ),
             )
 
+        duration_days = int(duration_days)
         deadline = date.fromordinal(incident.toordinal() + duration_days)
         remaining = (deadline - _today()).days
         valid = remaining >= 0
@@ -126,7 +129,7 @@ def _check_statute_of_limitations_impl(payload: CheckSOLInput) -> CheckSOLOutput
             explanation=(
                 f"{practice_area} / {payload.jurisdiction.upper()}: period={duration_days} days "
                 f"from {incident.isoformat()} to deadline {deadline.isoformat()}. "
-                f"{'Within' if valid else 'Outside'} SOL. Source: {rule[:180]}"
+                f"{'Within' if valid else 'Outside'} SOL. Source: {rule_text[:180]}"
             ),
         )
     except Exception as exc:  # noqa: BLE001

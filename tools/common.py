@@ -1,7 +1,7 @@
 """
 Shared helpers for LexIntake Agno tools.
 
-Practice-area normalization, Postgres KB lookups, SOL parsing, vector search,
+Practice-area normalization, Postgres KB lookups, vector search,
 and tool timing/metrics used across all intake screening tools.
 """
 
@@ -17,10 +17,6 @@ from monitoring.app_logging import get_console_logger, log_optional_failure
 logger = get_console_logger("tools")
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
-_YEARS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*years?", re.I)
-_MONTHS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*months?", re.I)
-_DAYS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*days?", re.I)
-_NO_SOL_RE = re.compile(r"\bno\s+sol\b|\bno\s+single\s+sol\b", re.I)
 
 # Slug aliases for match_practice_area (case_type → KB practice area name).
 PRACTICE_AREA_ALIASES: dict[str, str] = {
@@ -48,28 +44,6 @@ PRACTICE_AREA_ALIASES: dict[str, str] = {
     "consumer": "Consumer Protection",
     "fdcpa": "Consumer Protection",
 }
-
-# Phrase hints for free-text narrative parsing (substring → practice area).
-PRACTICE_TEXT_HINTS: tuple[tuple[str, str], ...] = (
-    ("personal injury", "Personal Injury"),
-    ("rear-end", "Personal Injury"),
-    ("slip-and-fall", "Personal Injury"),
-    ("slip and fall", "Personal Injury"),
-    ("collision", "Personal Injury"),
-    ("employment", "Employment Law"),
-    ("discrimination", "Employment Law"),
-    ("immigration", "Immigration"),
-    ("asylum", "Immigration"),
-    ("family", "Family Law"),
-    ("custody", "Family Law"),
-    ("divorce", "Family Law"),
-    ("workers", "Workers’ Compensation"),
-    ("malpractice", "Medical Malpractice"),
-    ("product", "Product Liability"),
-    ("civil rights", "Civil Rights"),
-    ("consumer", "Consumer Protection"),
-    ("criminal", "Criminal Defense"),
-)
 
 
 def slugify(value: str | None) -> str:
@@ -124,7 +98,11 @@ def load_acceptance_criteria(practice_area: str | None) -> dict[str, Any] | None
 
 
 def match_practice_area(case_type: str) -> str | None:
-    """Map free-text case_type to a KB practice area name (deterministic)."""
+    """Map a practice-area label to a KB name (exact slug or alias only).
+
+    Free-text narratives are classified by the LLM into ``ExtractedIntakeFields``;
+    this helper only resolves already-normalized labels to canonical KB names.
+    """
     if not case_type:
         return None
     areas = load_practice_areas()
@@ -137,75 +115,53 @@ def match_practice_area(case_type: str) -> str | None:
             return area
 
     if needle in PRACTICE_AREA_ALIASES:
-        return PRACTICE_AREA_ALIASES[needle]
+        aliased = PRACTICE_AREA_ALIASES[needle]
+        for area in areas:
+            if slugify(area) == slugify(aliased):
+                return area
+        return aliased
 
-    for area in areas:
-        area_slug = slugify(area)
-        if needle in area_slug or area_slug in needle:
-            return area
-
-    # Last resort: token overlap scoring when alias and substring matches fail.
-    best: tuple[int, str] | None = None
-    needle_tokens = set(needle.split("_"))
-    for area in areas:
-        tokens = set(slugify(area).split("_"))
-        score = len(needle_tokens & tokens)
-        if score and (best is None or score > best[0]):
-            best = (score, area)
-    return best[1] if best else None
+    return None
 
 
-def parse_sol_duration_days(rule_text: str) -> tuple[int | None, bool]:
+def lookup_sol_rule(practice_area: str, jurisdiction: str) -> dict[str, Any] | None:
+    """Lookup SOL rule from Postgres (seeded from kb/sol_tables.json).
+
+    Returns ``{rule_text, duration_days, open_ended}`` or ``None``.
     """
-    Parse a duration in days from SOL rule text.
-
-    Returns (days, open_ended). open_ended=True means no filing SOL (e.g. divorce).
-    """
-    if not rule_text:
-        return None, False
-    if _NO_SOL_RE.search(rule_text):
-        return None, True
-
-    years = _YEARS_RE.search(rule_text)
-    if years:
-        return int(float(years.group(1)) * 365), False
-
-    months = _MONTHS_RE.search(rule_text)
-    if months:
-        return int(float(months.group(1)) * 30), False
-
-    days = _DAYS_RE.search(rule_text)
-    if days:
-        return int(float(days.group(1))), False
-
-    return None, False
-
-
-def lookup_sol_rule(practice_area: str, jurisdiction: str) -> str | None:
-    """Lookup SOL rule text from Postgres sol_rules (seeded from kb/sol_tables.json)."""
     jur = jurisdiction.strip().upper()
     rows = query_structured(
         """
-        SELECT rule_text
+        SELECT rule_text, duration_days, open_ended
         FROM sol_rules
         WHERE practice_area = :area AND jurisdiction = :jur
         LIMIT 1
         """,
         {"area": practice_area, "jur": jur},
     )
-    if rows:
-        return str(rows[0].get("rule_text") or "") or None
-
-    # Slug fallback when practice_area string does not exactly match DB row.
-    all_rows = query_structured(
-        "SELECT practice_area, jurisdiction, rule_text FROM sol_rules WHERE jurisdiction = :jur",
-        {"jur": jur},
-    )
-    needle = slugify(practice_area)
-    for row in all_rows:
-        if slugify(str(row.get("practice_area") or "")) == needle:
-            return str(row.get("rule_text") or "") or None
-    return None
+    if not rows:
+        all_rows = query_structured(
+            """
+            SELECT practice_area, jurisdiction, rule_text, duration_days, open_ended
+            FROM sol_rules WHERE jurisdiction = :jur
+            """,
+            {"jur": jur},
+        )
+        needle = slugify(practice_area)
+        rows = [
+            row
+            for row in all_rows
+            if slugify(str(row.get("practice_area") or "")) == needle
+        ]
+    if not rows:
+        return None
+    row = rows[0]
+    duration = row.get("duration_days")
+    return {
+        "rule_text": str(row.get("rule_text") or ""),
+        "duration_days": int(duration) if duration is not None else None,
+        "open_ended": bool(row.get("open_ended", False)),
+    }
 
 
 def vector_search(

@@ -1,8 +1,8 @@
 """
 Agno tools available to the intake agent.
 
-`TOOLS` is registered on the Agno Agent for the agentic path.
-`run_deterministic` calls the same tools from `plan.tools_to_call` without an LLM.
+Registers the package ``@tool`` functions via an Agno ``Toolkit``.
+``run_deterministic`` calls the same tools from ``plan.tools_to_call`` without an LLM.
 """
 
 from __future__ import annotations
@@ -10,6 +10,9 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from agno.tools import Toolkit
+
+from tools import ALL_TOOLS
 from tools.check_statute_of_limitations import (
     CheckSOLInput,
     check_statute_of_limitations,
@@ -18,23 +21,25 @@ from tools.conflict_check import ConflictCheckInput, conflict_check
 from tools.estimate_case_value import EstimateCaseValueInput, estimate_case_value
 from tools.route_lead import RouteLeadInput, route_lead
 
-# Functions Agno may invoke when tool_choice=auto.
-TOOLS = [
-    check_statute_of_limitations,
-    conflict_check,
-    estimate_case_value,
-    route_lead,
-]
-
 # Whitelist used when the LLM proposes tools during plan refine.
 ALLOWED_TOOL_NAMES = frozenset(
-    {
-        "check_statute_of_limitations",
-        "conflict_check",
-        "estimate_case_value",
-        "route_lead",
-    }
+    str(getattr(t, "name", None) or getattr(t, "__name__", "")) for t in ALL_TOOLS
 )
+
+
+class IntakeToolkit(Toolkit):
+    """Agno toolkit wrapping LexIntake ``@tool`` functions from ``tools/``."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(
+            name="lexintake_intake",
+            tools=list(ALL_TOOLS),
+            **kwargs,
+        )
+
+
+# Registered on the Agno Agent for the agentic path.
+TOOLS = [IntakeToolkit()]
 
 
 def parse_tool_payload(value: Any) -> dict[str, Any]:
@@ -63,7 +68,7 @@ def run_deterministic(
     """
     Invoke planned tools in fixed order and merge into ToolPhaseResult.
 
-    Used as the non-LLM path and as a fill-in after agentic tool runs.
+    Used as the non-LLM / offline path when Agno tool-calling is unavailable.
     Errors are logged but do not raise — intake continues with partial results.
     """
     from agents.intake.models import ToolPhaseResult
@@ -78,21 +83,16 @@ def run_deterministic(
     try:
         # Statute of limitations — needs jurisdiction, case type, and a valid ISO date.
         if "check_statute_of_limitations" in plan.tools_to_call and facts.incident_date:
-            from agents.intake.fact_parse import infer_incident_date, is_iso_date
+            from agents.intake.fact_parse import is_iso_date
 
-            iso_date = (
-                facts.incident_date
-                if is_iso_date(facts.incident_date)
-                else infer_incident_date(facts.incident_date)
-            )
-            if not iso_date:
+            if not is_iso_date(facts.incident_date):
                 _log(f"SOL skipped: invalid incident_date={facts.incident_date!r}")
             else:
                 sol = check_statute_of_limitations.entrypoint(
                     CheckSOLInput(
                         jurisdiction=facts.jurisdiction or "",
                         case_type=case_type,
-                        incident_date=iso_date,
+                        incident_date=facts.incident_date.strip()[:10],
                     )
                 )
                 result.sol = parse_tool_payload(sol)
@@ -139,6 +139,7 @@ def run_deterministic(
 
 __all__ = [
     "ALLOWED_TOOL_NAMES",
+    "IntakeToolkit",
     "parse_tool_payload",
     "run_deterministic",
     "CheckSOLInput",

@@ -1,7 +1,7 @@
 """Intake application service — shared by API, frontend demo, and CLI.
 
-Orchestrates fact parsing, agent screening, lead scoring, and JSON payload
-assembly so HTTP routes and other entrypoints share one consistent pipeline.
+Orchestrates LLM fact extraction, agent screening, lead scoring, and JSON
+payload assembly so HTTP routes and other entrypoints share one pipeline.
 """
 
 from __future__ import annotations
@@ -11,10 +11,9 @@ from typing import Any
 
 from agents.intake.agent import IntakeAgent
 from agents.intake.constants import LEGAL_DISCLAIMER
-from agents.intake.fact_parse import parse_case_description
 from agents.intake.models import IntakeFacts, IntakeResponse
 from scoring.context import build_lead_score_context_from_response
-from scoring.domain import apply_uncertain_narrative_override, is_uncertain_narrative
+from scoring.domain import apply_uncertain_narrative_override
 from scoring.lead_scoring import score_lead
 
 __all__ = [
@@ -51,9 +50,10 @@ def build_result_payload(
         score_lead(ctx),
         narrative=description,
         tools=tools,
+        uncertain=facts.uncertain,
     )
     payload = scored.model_dump()
-    uncertain = is_uncertain_narrative(description)
+    uncertain = bool(facts.uncertain)
 
     payload["citations"] = citations
     payload["escalate"] = bool(
@@ -99,11 +99,12 @@ def run_intake_analysis(
 ) -> dict[str, Any]:
     """Run the production intake pipeline and return a JSON-ready payload.
 
-    Parses facts from free text, invokes ``IntakeAgent.run_intake``, scores the
-    lead, and records wall-clock latency plus optional LLM cost from the agent.
+    Extracts facts via LLM structured output (``ExtractedIntakeFields``),
+    invokes ``IntakeAgent.run_intake``, scores the lead, and records wall-clock
+    latency plus optional LLM cost from the agent.
     """
     agent = agent or IntakeAgent()
-    facts = parse_case_description(description)
+    facts = agent.extract_facts(description)
     started = time.perf_counter()
     response = agent.run_intake(facts)
     latency_ms = (time.perf_counter() - started) * 1000.0

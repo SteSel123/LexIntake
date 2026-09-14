@@ -1,14 +1,13 @@
 """Multi-turn prospective-client interview for LexIntake.
 
 ``InterviewSession`` drives a conversational intake: greet, collect required
-fields via targeted questions, merge heuristic + LLM extraction into ``IntakeFacts``,
+fields via targeted questions, merge LLM structured extraction into ``IntakeFacts``,
 then hand off to the full ``IntakeAgent`` screening pipeline when enough data exists
 (or the user asks to finish early with practice area + jurisdiction known).
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -116,123 +115,30 @@ class InterviewSession:
         )
 
     def _merge_text_into_facts(self, text: str) -> None:
-        """Heuristic extraction from free-text answers, then LLM field fill."""
-        from agents.intake.fact_parse import parse_case_description
+        """Fill facts via LLM structured extraction (money/date/jurisdiction included)."""
+        cleaned = text.strip()
 
-        # Prefer incremental field fills when answering a specific prompt.
+        # Direct answers to name / opposing prompts (identity strings only).
         last_q = ""
         for m in reversed(self.messages):
             if m.role == "assistant":
                 last_q = m.content.lower()
                 break
-
-        cleaned = text.strip()
-        from agents.intake.fact_parse import infer_incident_date, infer_jurisdiction
-
-        # Field prompts may ask several things at once — fill only when parse succeeds.
         if "name" in last_q and "full name" in last_q:
             self.facts.name = cleaned[:120]
         if "opposing" in last_q or "at-fault" in last_q:
             self.facts.opposing_party = cleaned[:160]
-        if "jurisdiction" in last_q or "us state" in last_q:
-            inferred_jur = infer_jurisdiction(cleaned)
-            if inferred_jur:
-                self.facts.jurisdiction = inferred_jur
-        if "incident" in last_q or "event date" in last_q:
-            inferred = infer_incident_date(cleaned)
-            if inferred:
-                self.facts.incident_date = inferred
-        if "damages" in last_q or "losses" in last_q:
-            digits = re.sub(r"[^\d.]", "", cleaned.replace(",", ""))
-            if digits:
-                try:
-                    self.facts.damages = int(float(digits))
-                except ValueError:
-                    pass
-        if "practice" in last_q or "legal matter" in last_q:
-            # Avoid treating a bare state code as the practice area.
-            if not infer_jurisdiction(cleaned) or len(cleaned) > 2:
-                self.facts.practice_area = cleaned[:80]
-                self.facts.case_type = cleaned[:80]
 
-        # Always fold narrative signals from the full utterance.
-        parsed = parse_case_description(cleaned)
-        if not self.facts.practice_area and parsed.practice_area:
-            self.facts.practice_area = parsed.practice_area
-            self.facts.case_type = parsed.case_type
-        if not self.facts.jurisdiction and parsed.jurisdiction:
-            self.facts.jurisdiction = parsed.jurisdiction
-        if not self.facts.incident_date and parsed.incident_date:
-            self.facts.incident_date = parsed.incident_date
-        if self.facts.damages is None and parsed.damages is not None:
-            self.facts.damages = parsed.damages
-        if (not self.facts.name or self.facts.name == SENTINEL_NAME) and parsed.name not in (
-            None,
-            SENTINEL_NAME,
-        ):
-            self.facts.name = parsed.name
-        if (
-            not self.facts.opposing_party or self.facts.opposing_party == SENTINEL_PARTY
-        ) and parsed.opposing_party not in (None, SENTINEL_PARTY):
-            self.facts.opposing_party = parsed.opposing_party
-
-        narrative = (self.facts.narrative or "").strip()
-        self.facts.narrative = (narrative + "\n" + cleaned).strip() if narrative else cleaned
-        if parsed.severity:
-            self.facts.severity = parsed.severity
-        if parsed.priority:
-            self.facts.priority = parsed.priority
-
-        # LLM extraction on top of heuristics
         assert self.agent is not None
-        self._llm_extract_fields(cleaned)
-
-    def _llm_extract_fields(self, text: str) -> None:
-        """Structured LLM pass to fill gaps the regex/heuristic merge may have missed."""
-        assert self.agent is not None
-        prompt = PROMPTS.user(
-            "extract_fields",
-            facts=self.facts.model_dump_json(),
-            text=text,
-        )
-        from agents.intake.models import ExtractedIntakeFields
-
-        extracted = self.agent.complete_structured(
-            prompt,
-            ExtractedIntakeFields,
-            system=PROMPTS.text("extract_system"),
-            name="LexIntake Interview Extract",
-        )
-        if not isinstance(extracted, ExtractedIntakeFields):
-            return
-        from agents.intake.fact_parse import infer_incident_date, infer_jurisdiction
-
-        for key in (
-            "name",
-            "opposing_party",
-            "practice_area",
-            "jurisdiction",
-            "incident_date",
-            "severity",
-        ):
-            val = getattr(extracted, key)
-            if val in (None, ""):
-                continue
-            if key == "incident_date":
-                normalized = infer_incident_date(str(val))
-                if normalized:
-                    self.facts.incident_date = normalized
-                continue
-            if key == "jurisdiction":
-                normalized = infer_jurisdiction(str(val))
-                if normalized:
-                    self.facts.jurisdiction = normalized
-                continue
-            setattr(self.facts, key, val)
-            if key == "practice_area":
-                self.facts.case_type = str(val)
-        if extracted.damages is not None:
-            self.facts.damages = int(extracted.damages)
+        extracted = self.agent.extract_facts(cleaned, base=self.facts)
+        if isinstance(extracted, IntakeFacts):
+            self.facts = extracted
+        else:
+            # Offline / stub agent: keep narrative only (no regex field inference).
+            prior = (self.facts.narrative or "").strip()
+            self.facts.narrative = (
+                f"{prior}\n{cleaned}".strip() if prior and prior != cleaned else cleaned
+            )
 
     def _questions_message(self, missing: list[str]) -> str:
         """Format up to ``max_questions_per_turn`` follow-ups from ``FIELD_PROMPTS``."""

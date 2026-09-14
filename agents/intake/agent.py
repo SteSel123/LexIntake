@@ -29,6 +29,7 @@ from agents.intake.decide import decide as score_intake
 from agents.intake.guardrails import self_check as run_self_check
 from agents.intake.models import (
     DecisionResult,
+    ExtractedIntakeFields,
     IntakeFacts,
     IntakeResponse,
     PlanRefineOutput,
@@ -38,6 +39,7 @@ from agents.intake.models import (
     SelfCheckResult,
     ToolPhaseResult,
 )
+from agents.intake.fact_parse import apply_extracted_fields, parse_case_description
 from agents.intake.plan import build_plan
 from agents.intake.respond import build_response
 from agents.intake.retrieve import retrieve as retrieve_chunks
@@ -202,6 +204,55 @@ class IntakeAgent(Agent):
         self._log("plan", f"llm-refined tools={plan.tools_to_call}")
         return plan
 
+    def extract_facts(
+        self,
+        description: str,
+        *,
+        base: IntakeFacts | None = None,
+    ) -> IntakeFacts:
+        """
+        LLM → ``ExtractedIntakeFields`` → ``IntakeFacts``.
+
+        Money, dates, and jurisdiction are normalized by the model. Without a
+        ready LLM, returns narrative-only stub facts (no regex parsing).
+        """
+        text = (description or "").strip()
+        if not self.llm_ready:
+            stub = parse_case_description(text)
+            if base is not None:
+                merged = base.model_copy(deep=True)
+                if text:
+                    prior = (merged.narrative or "").strip()
+                    merged.narrative = (
+                        f"{prior}\n{text}".strip() if prior and prior != text else text
+                    )
+                return merged
+            return stub
+
+        current = base or IntakeFacts()
+        extracted = self.complete_structured(
+            PROMPTS.user(
+                "extract_fields",
+                facts=current.model_dump_json(),
+                text=text,
+            ),
+            ExtractedIntakeFields,
+            system=PROMPTS.text("extract_system"),
+            name="LexIntake Fact Extract",
+        )
+        if not isinstance(extracted, ExtractedIntakeFields):
+            self._log("extract", "structured ExtractedIntakeFields missing; narrative-only stub")
+            return parse_case_description(text) if base is None else apply_extracted_fields(
+                ExtractedIntakeFields(), narrative=text, base=base
+            )
+        facts = apply_extracted_fields(extracted, narrative=text, base=base)
+        self._log(
+            "extract",
+            f"fields practice={facts.practice_area} jur={facts.jurisdiction} "
+            f"date={facts.incident_date} damages={facts.damages}",
+        )
+        return facts
+
     def _llm_write_message(
         self,
         facts: IntakeFacts,
@@ -287,8 +338,9 @@ class IntakeAgent(Agent):
 
     def _use_tools_agentic(self, facts: IntakeFacts, plan: PlanResult) -> ToolPhaseResult:
         """
-        Let Agno run tools via the LLM, then map tool names → ToolPhaseResult fields.
-        Fill any gaps from the deterministic path so required checks are not skipped.
+        Let Agno run tools via the LLM, then map run_out.tools → ToolPhaseResult.
+        Does not re-run tools deterministically; offline/fallback uses
+        `_use_tools_deterministic` from `use_tools` when there is no model.
         """
         run_out = self.run(
             PROMPTS.user("use_tools", facts=facts.model_dump_json(), tools_to_call=plan.tools_to_call)
@@ -319,14 +371,6 @@ class IntakeAgent(Agent):
                 result.estimate = payload
             elif "route" in name:
                 result.routing = payload
-
-        # Planned tools: deterministic path is the audit source of truth.
-        # Agentic results only fill gaps (avoids incomplete LLM tool rows wiping SOL/estimate).
-        det = self._use_tools_deterministic(facts, plan)
-        result.sol = det.sol or result.sol
-        result.conflict = det.conflict or result.conflict
-        result.estimate = det.estimate or result.estimate
-        result.routing = det.routing or result.routing
 
         in_tok, out_tok, total, cost = usage_from_run(run_out)
         self._accumulate_agno_usage(in_tok, out_tok, total, cost)
